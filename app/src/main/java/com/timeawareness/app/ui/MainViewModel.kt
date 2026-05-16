@@ -5,15 +5,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.model.AppTimerState
-import com.timeawareness.app.util.UsageStatsHelper
+import com.timeawareness.app.util.InstalledAppsCache
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -22,7 +20,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val dataStore = TimerDataStore(application)
 
     private val _installedApps = MutableStateFlow<List<Pair<String, String>>>(emptyList())
-    private val _elapsedSnapshot = MutableStateFlow<Map<String, Long>>(emptyMap())
 
     val masterEnabled: StateFlow<Boolean> = dataStore.masterEnabledFlow()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -30,7 +27,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val appStates: StateFlow<List<AppTimerState>> = combine(
         dataStore.monitoredAppsFlow(),
         _installedApps,
-        _elapsedSnapshot
+        dataStore.allElapsedTodayFlow()
     ) { monitored, installed, elapsed ->
         installed.map { (pkg, label) ->
             AppTimerState(
@@ -47,11 +44,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch {
             _installedApps.value = withContext(Dispatchers.IO) {
-                UsageStatsHelper.getInstalledApps(getApplication())
+                InstalledAppsCache.get(getApplication())
             }
         }
-        refresh()
-        startElapsedPoll()
     }
 
     fun setMonitored(pkg: String, monitored: Boolean) {
@@ -62,21 +57,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { dataStore.setMasterEnabled(enabled) }
     }
 
-    fun refresh() {
+    // Kept for the activity's permission-grant callbacks to nudge an icon-list refresh
+    // if the user has just sideloaded an app and returns to us.
+    fun refreshInstalledApps() {
         viewModelScope.launch {
-            _elapsedSnapshot.value = dataStore.readAllElapsedToday()
-        }
-    }
-
-    /**
-     * Keep the on-screen elapsed numbers fresh while the app is visible. The service writes
-     * to DataStore on a 5s cadence; polling at 2s feels responsive without spamming reads.
-     */
-    private fun startElapsedPoll() {
-        viewModelScope.launch {
-            while (isActive) {
-                delay(2_000)
-                _elapsedSnapshot.value = dataStore.readAllElapsedToday()
+            _installedApps.value = withContext(Dispatchers.IO) {
+                InstalledAppsCache.refresh(getApplication())
             }
         }
     }

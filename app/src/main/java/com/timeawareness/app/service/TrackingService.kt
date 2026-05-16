@@ -23,7 +23,6 @@ import com.timeawareness.app.util.FormatUtil
 import com.timeawareness.app.util.UsageStatsHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -40,8 +39,9 @@ class TrackingService : LifecycleService() {
     companion object {
         private const val CHANNEL_ID = "tracking_service"
         private const val NOTIFICATION_ID = 1
-        private const val POLL_WINDOW_MS = 10_000L
-        private const val PERSIST_INTERVAL_SECONDS = 5
+        private const val TICK_INTERVAL_MS = 2_000L
+        private const val PERSIST_INTERVAL_TICKS = 3   // every 6s with 2s tick
+        private const val PERMISSION_RECHECK_MS = 30_000L
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, TrackingService::class.java))
@@ -66,6 +66,10 @@ class TrackingService : LifecycleService() {
     private var currentDate: LocalDate = LocalDate.now()
     private var lastPollTime = System.currentTimeMillis()
     private var tickJob: Job? = null
+
+    // Cached permission state — re-checked at most every PERMISSION_RECHECK_MS.
+    private var cachedHasUsagePermission = false
+    private var lastPermissionCheckMs = 0L
 
     private var overlayParams: WindowManager.LayoutParams? = null
     private var dragInitialX = 0
@@ -128,21 +132,21 @@ class TrackingService : LifecycleService() {
         lifecycleScope.launch {
             dataStore.monitoredAppsFlow().collect { apps ->
                 monitoredApps = apps
-                apps.forEach { pkg ->
-                    if (!elapsedSeconds.containsKey(pkg)) {
-                        elapsedSeconds[pkg] = dataStore.elapsedSecondsFlow(pkg).first()
-                    }
+                // Seed in-memory counters for newly-added packages using a single
+                // DataStore snapshot read (the prior per-package .first() was N reads).
+                val newPackages = apps.filter { it !in elapsedSeconds }
+                if (newPackages.isNotEmpty()) {
+                    val snapshot = dataStore.readAllElapsedToday()
+                    newPackages.forEach { pkg -> elapsedSeconds[pkg] = snapshot[pkg] ?: 0L }
                 }
                 // If the user removed an app while its overlay was shown, hide it.
                 val fg = currentForegroundPkg
                 if (overlayView != null && (fg == null || fg !in apps)) {
                     removeOverlay()
                 }
-                // Stop the service when nothing is being monitored.
                 if (apps.isEmpty()) stopSelf()
             }
         }
-        // Master switch: stop the service when the user turns tracking off globally.
         lifecycleScope.launch {
             dataStore.masterEnabledFlow().collect { enabled ->
                 if (!enabled) stopSelf()
@@ -155,14 +159,14 @@ class TrackingService : LifecycleService() {
     private fun startTickLoop() {
         tickJob = lifecycleScope.launch {
             while (true) {
-                delay(1_000)
+                delay(TICK_INTERVAL_MS)
                 tick()
             }
         }
     }
 
     private suspend fun tick() {
-        if (!UsageStatsHelper.hasUsageStatsPermission(this)) return
+        if (!hasUsagePermissionCached()) return
         if (monitoredApps.isEmpty()) return
 
         handleMidnightRollover()
@@ -185,17 +189,27 @@ class TrackingService : LifecycleService() {
         val pkg = currentForegroundPkg ?: return
         if (pkg !in monitoredApps) return
 
-        val updated = (elapsedSeconds[pkg] ?: 0L) + 1L
+        // Add seconds equal to the tick interval (not 1s) since we now tick every 2s.
+        val tickSeconds = TICK_INTERVAL_MS / 1000L
+        val updated = (elapsedSeconds[pkg] ?: 0L) + tickSeconds
         elapsedSeconds[pkg] = updated
         dirtyPackages += pkg
         updateOverlayText(updated)
 
-        // Batch writes to DataStore.
         ticksSincePersist++
-        if (ticksSincePersist >= PERSIST_INTERVAL_SECONDS) {
+        if (ticksSincePersist >= PERSIST_INTERVAL_TICKS) {
             flushDirty()
             ticksSincePersist = 0
         }
+    }
+
+    private fun hasUsagePermissionCached(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastPermissionCheckMs > PERMISSION_RECHECK_MS) {
+            cachedHasUsagePermission = UsageStatsHelper.hasUsageStatsPermission(this)
+            lastPermissionCheckMs = now
+        }
+        return cachedHasUsagePermission
     }
 
     private suspend fun flushDirty() {

@@ -59,13 +59,17 @@ class TimerDataStore(private val context: Context) {
         }
     }
 
-    // Returns a snapshot map of packageName -> elapsedSeconds (today only).
-    suspend fun readAllElapsedToday(): Map<String, Long> {
-        val today = LocalDate.now().toString()
-        val prefs = context.dataStore.data.first()
-        val monitored = prefs[monitoredAppsKey] ?: emptySet()
-        return monitored.associateWith { pkg ->
-            if ((prefs[dateKey(pkg)] ?: "") == today) prefs[elapsedKey(pkg)] ?: 0L else 0L
+    // Flow of today's elapsed-seconds map for all monitored packages.
+    // Emits only when DataStore actually changes — no polling needed.
+    fun allElapsedTodayFlow(): Flow<Map<String, Long>> =
+        context.dataStore.data.map { prefs ->
+            val today = LocalDate.now().toString()
+            val monitored = prefs[monitoredAppsKey] ?: emptySet()
+            monitored.associateWith { pkg ->
+                if ((prefs[dateKey(pkg)] ?: "") == today) prefs[elapsedKey(pkg)] ?: 0L else 0L
+            }
         }
-    }
+
+    // One-shot snapshot read using a single Preferences fetch.
+    suspend fun readAllElapsedToday(): Map<String, Long> = allElapsedTodayFlow().first()
 }

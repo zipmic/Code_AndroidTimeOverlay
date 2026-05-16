@@ -32,14 +32,12 @@ class MainActivity : ComponentActivity() {
     private val overlayPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        viewModel.refresh()
         maybeStartService()
     }
 
     private val usageStatsLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        viewModel.refresh()
         maybeStartService()
     }
 
@@ -66,7 +64,6 @@ class MainActivity : ComponentActivity() {
                         if (event == Lifecycle.Event.ON_RESUME) {
                             hasUsageStats = UsageStatsHelper.hasUsageStatsPermission(this@MainActivity)
                             hasOverlay = UsageStatsHelper.hasOverlayPermission(this@MainActivity)
-                            viewModel.refresh()
                             maybeStartService()
                         }
                     }
