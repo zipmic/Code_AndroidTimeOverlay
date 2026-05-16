@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.timeawareness.app.data.TimerDataStore
+import com.timeawareness.app.data.TimerDataStore.Companion.OVERLAY_SIZE_MAX
+import com.timeawareness.app.data.TimerDataStore.Companion.OVERLAY_SIZE_MIN
 import com.timeawareness.app.model.AppTimerState
 import com.timeawareness.app.util.InstalledAppsCache
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +25,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val masterEnabled: StateFlow<Boolean> = dataStore.masterEnabledFlow()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val overlaySize: StateFlow<Int> = dataStore.overlaySizeFlow()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, TimerDataStore.OVERLAY_SIZE_DEFAULT)
 
     /**
      * Apps shown in the list, sorted with monitored apps first and the rest
@@ -66,6 +71,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resetTimer(pkg: String) {
         viewModelScope.launch { dataStore.resetElapsedSeconds(pkg) }
+    }
+
+    fun setOverlaySize(sp: Int) {
+        val clamped = sp.coerceIn(OVERLAY_SIZE_MIN, OVERLAY_SIZE_MAX)
+        viewModelScope.launch { dataStore.saveOverlaySize(clamped) }
     }
 
     fun refreshInstalledApps() {

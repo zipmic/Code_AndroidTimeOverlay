@@ -32,6 +32,13 @@ class TimerDataStore(private val context: Context) {
     private val masterEnabledKey = booleanPreferencesKey("master_enabled")
     private val overlayXKey = intPreferencesKey("overlay_x")
     private val overlayYKey = intPreferencesKey("overlay_y")
+    private val overlaySizeKey = intPreferencesKey("overlay_size")
+
+    companion object {
+        const val OVERLAY_SIZE_DEFAULT = 14
+        const val OVERLAY_SIZE_MIN = 10
+        const val OVERLAY_SIZE_MAX = 32
+    }
 
     fun monitoredAppsFlow(): Flow<Set<String>> =
         context.dataStore.data
@@ -93,6 +100,17 @@ class TimerDataStore(private val context: Context) {
         context.dataStore.data.first()[monitoredAppsKey] ?: emptySet()
 
     suspend fun readAllElapsedToday(): Map<String, Long> = snapshotFlow().first().elapsedToday
+
+    // ── Overlay size ──────────────────────────────────────────────────────────
+
+    fun overlaySizeFlow(): Flow<Int> =
+        context.dataStore.data
+            .map { prefs -> prefs[overlaySizeKey] ?: OVERLAY_SIZE_DEFAULT }
+            .distinctUntilChanged()
+
+    suspend fun saveOverlaySize(sp: Int) {
+        context.dataStore.edit { prefs -> prefs[overlaySizeKey] = sp }
+    }
 
     // ── Overlay position ─────────────────────────────────────────────────────
 

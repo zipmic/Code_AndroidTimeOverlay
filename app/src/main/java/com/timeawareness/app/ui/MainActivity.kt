@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
             TimeAwarenessTheme {
                 val appStates by viewModel.appStates.collectAsState()
                 val masterEnabled by viewModel.masterEnabled.collectAsState()
+                val overlaySize by viewModel.overlaySize.collectAsState()
 
                 var hasUsageStats by remember {
                     mutableStateOf(UsageStatsHelper.hasUsageStatsPermission(this))
@@ -84,6 +85,7 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     appStates = appStates,
                     masterEnabled = masterEnabled,
+                    overlaySize = overlaySize,
                     hasUsageStatsPermission = hasUsageStats,
                     hasOverlayPermission = hasOverlay,
                     isBatteryUnrestricted = isBatteryUnrestricted,
@@ -95,6 +97,7 @@ class MainActivity : ComponentActivity() {
                             TrackingService.start(this)
                         }
                     },
+                    onOverlaySizeChange = { viewModel.setOverlaySize(it) },
                     onRequestUsageStats = { requestUsageStatsPermission() },
                     onRequestOverlay = { requestOverlayPermission() },
                     onRequestBatteryExemption = { requestBatteryExemption() },

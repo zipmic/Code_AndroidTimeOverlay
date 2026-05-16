@@ -12,6 +12,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -89,6 +90,8 @@ class TrackingService : LifecycleService() {
     private var cachedHasUsagePermission = false
     private var lastPermissionCheckMs = 0L
 
+    private var cachedOverlayTextSp = TimerDataStore.OVERLAY_SIZE_DEFAULT
+
     private var overlayParams: WindowManager.LayoutParams? = null
     private var cachedOverlayPosition: Pair<Int, Int>? = null
     private var dragInitialX = 0
@@ -110,6 +113,7 @@ class TrackingService : LifecycleService() {
         observeMonitoredApps()
         // Warm the overlay position cache so showOverlay doesn't need to block on disk.
         lifecycleScope.launch { cachedOverlayPosition = dataStore.readOverlayPosition() }
+        observeOverlaySize()
         startTickLoop()
     }
 
@@ -285,6 +289,19 @@ class TrackingService : LifecycleService() {
         }
     }
 
+    private fun observeOverlaySize() {
+        lifecycleScope.launch {
+            dataStore.overlaySizeFlow().collect { sp ->
+                cachedOverlayTextSp = sp
+                applyOverlayTextSize()
+            }
+        }
+    }
+
+    private fun applyOverlayTextSize() {
+        overlayTimerText?.setTextSize(TypedValue.COMPLEX_UNIT_SP, cachedOverlayTextSp.toFloat())
+    }
+
     // ── Overlay ───────────────────────────────────────────────────────────────
 
     private fun showOverlay(initialSeconds: Long) {
@@ -312,6 +329,7 @@ class TrackingService : LifecycleService() {
         try {
             windowManager.addView(view, params)
             overlayView = view
+            applyOverlayTextSize()
             updateOverlay(initialSeconds)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to add overlay view", e)

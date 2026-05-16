@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.model.AppTimerState
 import com.timeawareness.app.ui.components.AppTimerRow
 import com.timeawareness.app.ui.components.PermissionBanner
@@ -45,7 +48,9 @@ fun MainScreen(
     hasUsageStatsPermission: Boolean,
     hasOverlayPermission: Boolean,
     isBatteryUnrestricted: Boolean,
+    overlaySize: Int,
     onMasterToggle: (Boolean) -> Unit,
+    onOverlaySizeChange: (Int) -> Unit,
     onRequestUsageStats: () -> Unit,
     onRequestOverlay: () -> Unit,
     onRequestBatteryExemption: () -> Unit,
@@ -138,6 +143,33 @@ fun MainScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Text(
+                    text = "Overlay size",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "${overlaySize}sp",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Slider(
+                value = overlaySize.toFloat(),
+                onValueChange = { onOverlaySizeChange(it.toInt()) },
+                valueRange = TimerDataStore.OVERLAY_SIZE_MIN.toFloat()..TimerDataStore.OVERLAY_SIZE_MAX.toFloat(),
+                steps = TimerDataStore.OVERLAY_SIZE_MAX - TimerDataStore.OVERLAY_SIZE_MIN - 1,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            )
 
             OutlinedTextField(
                 value = query,
