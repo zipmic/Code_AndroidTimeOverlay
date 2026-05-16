@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import com.timeawareness.app.model.AppTimerState
 import com.timeawareness.app.ui.components.AppTimerRow
@@ -23,14 +26,27 @@ import com.timeawareness.app.ui.components.PermissionBanner
 @Composable
 fun MainScreen(
     appStates: List<AppTimerState>,
+    masterEnabled: Boolean,
     hasUsageStatsPermission: Boolean,
     hasOverlayPermission: Boolean,
+    onMasterToggle: (Boolean) -> Unit,
     onRequestUsageStats: () -> Unit,
     onRequestOverlay: () -> Unit,
     onToggleMonitored: (String, Boolean) -> Unit,
 ) {
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Time Awareness") }) }
+        topBar = {
+            TopAppBar(
+                title = { Text("Time Awareness") },
+                actions = {
+                    Switch(
+                        checked = masterEnabled,
+                        onCheckedChange = onMasterToggle,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                }
+            )
+        }
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -59,14 +75,21 @@ fun MainScreen(
                 )
             }
 
+            if (!masterEnabled) {
+                Text(
+                    text = "Tracking is paused. Turn on the switch above to start.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+
             LazyColumn(
+                modifier = Modifier.alpha(if (masterEnabled) 1f else 0.5f),
                 contentPadding = PaddingValues(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                items(
-                    items = appStates,
-                    key = { it.packageName }
-                ) { state ->
+                items(items = appStates, key = { it.packageName }) { state ->
                     AppTimerRow(
                         state = state,
                         onToggle = { enabled -> onToggleMonitored(state.packageName, enabled) }

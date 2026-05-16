@@ -142,6 +142,12 @@ class TrackingService : LifecycleService() {
                 if (apps.isEmpty()) stopSelf()
             }
         }
+        // Master switch: stop the service when the user turns tracking off globally.
+        lifecycleScope.launch {
+            dataStore.masterEnabledFlow().collect { enabled ->
+                if (!enabled) stopSelf()
+            }
+        }
     }
 
     // ── Main tick loop ────────────────────────────────────────────────────────

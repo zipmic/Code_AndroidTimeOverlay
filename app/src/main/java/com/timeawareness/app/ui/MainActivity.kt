@@ -20,10 +20,12 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.service.TrackingService
 import com.timeawareness.app.ui.screens.MainScreen
 import com.timeawareness.app.ui.theme.TimeAwarenessTheme
 import com.timeawareness.app.util.UsageStatsHelper
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
 
@@ -54,6 +56,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             TimeAwarenessTheme {
                 val appStates by viewModel.appStates.collectAsState()
+                val masterEnabled by viewModel.masterEnabled.collectAsState()
 
                 var hasUsageStats by remember { mutableStateOf(UsageStatsHelper.hasUsageStatsPermission(this)) }
                 var hasOverlay by remember { mutableStateOf(UsageStatsHelper.hasOverlayPermission(this)) }
@@ -75,8 +78,14 @@ class MainActivity : ComponentActivity() {
 
                 MainScreen(
                     appStates = appStates,
+                    masterEnabled = masterEnabled,
                     hasUsageStatsPermission = hasUsageStats,
                     hasOverlayPermission = hasOverlay,
+                    onMasterToggle = { enabled ->
+                        viewModel.setMasterEnabled(enabled)
+                        if (enabled) maybeStartService()
+                        // When disabled, the service observes the flow and stops itself.
+                    },
                     onRequestUsageStats = { requestUsageStatsPermission() },
                     onRequestOverlay = { requestOverlayPermission() },
                     onToggleMonitored = { pkg, enabled ->
@@ -89,9 +98,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun maybeStartService() {
-        if (UsageStatsHelper.hasUsageStatsPermission(this)) {
-            TrackingService.start(this)
-        }
+        if (!UsageStatsHelper.hasUsageStatsPermission(this)) return
+        val masterOn = runBlocking { TimerDataStore(this@MainActivity).isMasterEnabled() }
+        if (masterOn) TrackingService.start(this)
     }
 
     private fun requestNotificationPermissionIfNeeded() {

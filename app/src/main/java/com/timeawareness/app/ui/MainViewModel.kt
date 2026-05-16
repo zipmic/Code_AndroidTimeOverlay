@@ -24,6 +24,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _installedApps = MutableStateFlow<List<Pair<String, String>>>(emptyList())
     private val _elapsedSnapshot = MutableStateFlow<Map<String, Long>>(emptyMap())
 
+    val masterEnabled: StateFlow<Boolean> = dataStore.masterEnabledFlow()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     val appStates: StateFlow<List<AppTimerState>> = combine(
         dataStore.monitoredAppsFlow(),
         _installedApps,
@@ -53,6 +56,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setMonitored(pkg: String, monitored: Boolean) {
         viewModelScope.launch { dataStore.setMonitored(pkg, monitored) }
+    }
+
+    fun setMasterEnabled(enabled: Boolean) {
+        viewModelScope.launch { dataStore.setMasterEnabled(enabled) }
     }
 
     fun refresh() {

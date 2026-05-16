@@ -3,6 +3,7 @@ package com.timeawareness.app.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -20,6 +21,7 @@ class TimerDataStore(private val context: Context) {
     private fun elapsedKey(pkg: String) = longPreferencesKey("elapsed_$pkg")
     private fun dateKey(pkg: String) = stringPreferencesKey("date_$pkg")
     private val monitoredAppsKey = stringSetPreferencesKey("monitored_apps")
+    private val masterEnabledKey = booleanPreferencesKey("master_enabled")
 
     // Returns today's elapsed seconds for a package, or 0 if the stored date is not today.
     fun elapsedSecondsFlow(pkg: String): Flow<Long> =
@@ -31,6 +33,16 @@ class TimerDataStore(private val context: Context) {
 
     fun monitoredAppsFlow(): Flow<Set<String>> =
         context.dataStore.data.map { prefs -> prefs[monitoredAppsKey] ?: emptySet() }
+
+    fun masterEnabledFlow(): Flow<Boolean> =
+        context.dataStore.data.map { prefs -> prefs[masterEnabledKey] ?: false }
+
+    suspend fun setMasterEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[masterEnabledKey] = enabled }
+    }
+
+    suspend fun isMasterEnabled(): Boolean =
+        context.dataStore.data.first()[masterEnabledKey] ?: false
 
     suspend fun saveElapsedSeconds(pkg: String, seconds: Long) {
         context.dataStore.edit { prefs ->

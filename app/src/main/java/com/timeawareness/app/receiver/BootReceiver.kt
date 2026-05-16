@@ -18,7 +18,9 @@ class BootReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val monitored = TimerDataStore(context).readAllElapsedToday().keys
+                val store = TimerDataStore(context)
+                if (!store.isMasterEnabled()) return@launch
+                val monitored = store.readAllElapsedToday().keys
                 if (monitored.isNotEmpty()) {
                     TrackingService.start(context)
                 }
