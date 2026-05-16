@@ -24,21 +24,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val masterEnabled: StateFlow<Boolean> = dataStore.masterEnabledFlow()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    /**
+     * Apps shown in the list, sorted with monitored apps first and the rest
+     * alphabetically below. Built from a single combined snapshot flow that
+     * only emits when DataStore actually changes.
+     */
     val appStates: StateFlow<List<AppTimerState>> = combine(
-        dataStore.monitoredAppsFlow(),
         _installedApps,
-        dataStore.allElapsedTodayFlow()
-    ) { monitored, installed, elapsed ->
-        installed.map { (pkg, label) ->
-            AppTimerState(
-                packageName = pkg,
-                appLabel = label,
-                iconKey = pkg,
-                isMonitored = pkg in monitored,
-                elapsedSeconds = elapsed[pkg] ?: 0L,
-                isActiveNow = false
+        dataStore.snapshotFlow()
+    ) { installed, snapshot ->
+        installed
+            .map { (pkg, label) ->
+                AppTimerState(
+                    packageName = pkg,
+                    appLabel = label,
+                    isMonitored = pkg in snapshot.monitoredApps,
+                    elapsedSeconds = snapshot.elapsedToday[pkg] ?: 0L,
+                )
+            }
+            .sortedWith(
+                compareByDescending<AppTimerState> { it.isMonitored }
+                    .thenBy { it.appLabel.lowercase() }
             )
-        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
@@ -57,8 +64,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { dataStore.setMasterEnabled(enabled) }
     }
 
-    // Kept for the activity's permission-grant callbacks to nudge an icon-list refresh
-    // if the user has just sideloaded an app and returns to us.
+    fun resetTimer(pkg: String) {
+        viewModelScope.launch { dataStore.resetElapsedSeconds(pkg) }
+    }
+
     fun refreshInstalledApps() {
         viewModelScope.launch {
             _installedApps.value = withContext(Dispatchers.IO) {

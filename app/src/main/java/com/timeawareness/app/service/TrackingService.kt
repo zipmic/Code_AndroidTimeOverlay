@@ -1,5 +1,6 @@
 package com.timeawareness.app.service
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -7,8 +8,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -31,23 +34,30 @@ import java.time.LocalDate
 
 /**
  * Foreground service that:
- *   • polls UsageStatsManager every second for foreground app transitions,
+ *   • polls UsageStatsManager every TICK_INTERVAL_MS for foreground transitions,
  *   • increments per-app daily counters while a monitored app is in focus,
- *   • shows/hides a draggable overlay timer,
- *   • persists state to DataStore in batched flushes (every PERSIST_INTERVAL_SECONDS),
- *   • resets counters on a date change.
+ *   • shows/hides a draggable colour-coded overlay timer,
+ *   • persists state to DataStore in batched flushes,
+ *   • resets counters on a date change,
+ *   • updates its persistent notification with the active app + elapsed time.
  */
 class TrackingService : LifecycleService() {
 
     companion object {
+        private const val TAG = "TrackingService"
         private const val CHANNEL_ID = "tracking_service"
         private const val NOTIFICATION_ID = 1
         private const val TICK_INTERVAL_MS = 2_000L
         private const val PERSIST_INTERVAL_TICKS = 3   // every 6s with 2s tick
         private const val PERMISSION_RECHECK_MS = 30_000L
-        // On the first tick we don't know what the user is already doing — look back
-        // far enough to find the most recent foreground transition.
         private const val INITIAL_LOOKBACK_MS = 60 * 60 * 1000L  // 1 hour
+
+        // Overlay background colours by elapsed bucket.
+        private const val COLOR_NEUTRAL = 0xCC000000.toInt()
+        private const val COLOR_WARN = 0xCCB45309.toInt()    // amber
+        private const val COLOR_ALERT = 0xCCB91C1C.toInt()   // red
+        private const val WARN_AFTER_SECONDS = 30L * 60      // 30 min
+        private const val ALERT_AFTER_SECONDS = 60L * 60     // 60 min
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, TrackingService::class.java))
@@ -60,6 +70,9 @@ class TrackingService : LifecycleService() {
 
     private lateinit var dataStore: TimerDataStore
     private lateinit var windowManager: WindowManager
+    private lateinit var notificationManager: NotificationManager
+    private lateinit var openAppPendingIntent: PendingIntent
+
     private var overlayView: View? = null
     private var overlayTimerText: TextView? = null
 
@@ -73,11 +86,11 @@ class TrackingService : LifecycleService() {
     private var lastPollTime = System.currentTimeMillis()
     private var tickJob: Job? = null
 
-    // Cached permission state — re-checked at most every PERMISSION_RECHECK_MS.
     private var cachedHasUsagePermission = false
     private var lastPermissionCheckMs = 0L
 
     private var overlayParams: WindowManager.LayoutParams? = null
+    private var cachedOverlayPosition: Pair<Int, Int>? = null
     private var dragInitialX = 0
     private var dragInitialY = 0
     private var dragTouchX = 0f
@@ -87,8 +100,16 @@ class TrackingService : LifecycleService() {
         super.onCreate()
         dataStore = TimerDataStore(this)
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        openAppPendingIntent = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
         startForegroundWithNotification()
         observeMonitoredApps()
+        // Warm the overlay position cache so showOverlay doesn't need to block on disk.
+        lifecycleScope.launch { cachedOverlayPosition = dataStore.readOverlayPosition() }
         startTickLoop()
     }
 
@@ -102,9 +123,6 @@ class TrackingService : LifecycleService() {
     override fun onDestroy() {
         removeOverlay()
         tickJob?.cancel()
-        // Block briefly so the last few seconds of usage are persisted before the
-        // process is reclaimed. Service.onDestroy() permits up to 20s of work and
-        // DataStore writes complete in well under 100ms.
         runBlocking { flushDirty() }
         super.onDestroy()
     }
@@ -112,27 +130,12 @@ class TrackingService : LifecycleService() {
     // ── Notification ─────────────────────────────────────────────────────────
 
     private fun startForegroundWithNotification() {
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             CHANNEL_ID, "App Timer", NotificationManager.IMPORTANCE_LOW
         ).apply { description = "Tracks time spent in selected apps" }
-        nm.createNotificationChannel(channel)
+        notificationManager.createNotificationChannel(channel)
 
-        val openApp = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Time Awareness")
-            .setContentText("Monitoring active")
-            .setSmallIcon(R.drawable.ic_timer)
-            .setContentIntent(openApp)
-            .setOngoing(true)
-            .build()
-
-        // Android 14+ requires the foreground service type to match the manifest declaration;
-        // calling the 2-arg overload on those devices throws MissingForegroundServiceTypeException.
+        val notification = buildNotification("Monitoring active")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID,
@@ -144,20 +147,45 @@ class TrackingService : LifecycleService() {
         }
     }
 
+    private fun buildNotification(text: String): Notification =
+        NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Time Awareness")
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_timer)
+            .setContentIntent(openAppPendingIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+
+    private fun updateNotification() {
+        val pkg = currentForegroundPkg
+        val text = if (pkg != null && pkg in monitoredApps) {
+            val label = labelFor(pkg)
+            val seconds = elapsedSeconds[pkg] ?: 0L
+            "$label — ${FormatUtil.formatSeconds(seconds)}"
+        } else {
+            "Monitoring active"
+        }
+        notificationManager.notify(NOTIFICATION_ID, buildNotification(text))
+    }
+
+    private fun labelFor(pkg: String): String = try {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+    } catch (e: Exception) {
+        pkg
+    }
+
     // ── Monitored app list ────────────────────────────────────────────────────
 
     private fun observeMonitoredApps() {
         lifecycleScope.launch {
             dataStore.monitoredAppsFlow().collect { apps ->
                 monitoredApps = apps
-                // Seed in-memory counters for newly-added packages using a single
-                // DataStore snapshot read (the prior per-package .first() was N reads).
                 val newPackages = apps.filter { it !in elapsedSeconds }
                 if (newPackages.isNotEmpty()) {
                     val snapshot = dataStore.readAllElapsedToday()
                     newPackages.forEach { pkg -> elapsedSeconds[pkg] = snapshot[pkg] ?: 0L }
                 }
-                // If the user removed an app while its overlay was shown, hide it.
                 val fg = currentForegroundPkg
                 if (overlayView != null && (fg == null || fg !in apps)) {
                     removeOverlay()
@@ -175,8 +203,6 @@ class TrackingService : LifecycleService() {
     // ── Main tick loop ────────────────────────────────────────────────────────
 
     private fun startTickLoop() {
-        // Seed lastPollTime so the first queryEvents call looks back an hour — wide enough
-        // to catch the FOREGROUND event for whatever app the user is already inside.
         lastPollTime = System.currentTimeMillis() - INITIAL_LOOKBACK_MS
         tickJob = lifecycleScope.launch {
             while (true) {
@@ -187,7 +213,11 @@ class TrackingService : LifecycleService() {
     }
 
     private suspend fun tick() {
-        if (!hasUsagePermissionCached()) return
+        if (!hasUsagePermissionCached()) {
+            // Permission revoked from Settings — no point continuing to run.
+            stopSelf()
+            return
+        }
         if (monitoredApps.isEmpty()) return
 
         handleMidnightRollover()
@@ -205,22 +235,23 @@ class TrackingService : LifecycleService() {
             if (foreground in monitoredApps) {
                 showOverlay(elapsedSeconds[foreground] ?: 0L)
             }
+            updateNotification()
         }
 
         val pkg = currentForegroundPkg ?: return
         if (pkg !in monitoredApps) return
 
-        // Add seconds equal to the tick interval (not 1s) since we now tick every 2s.
         val tickSeconds = TICK_INTERVAL_MS / 1000L
         val updated = (elapsedSeconds[pkg] ?: 0L) + tickSeconds
         elapsedSeconds[pkg] = updated
         dirtyPackages += pkg
-        updateOverlayText(updated)
+        updateOverlay(updated)
 
         ticksSincePersist++
         if (ticksSincePersist >= PERSIST_INTERVAL_TICKS) {
             flushDirty()
             ticksSincePersist = 0
+            updateNotification()
         }
     }
 
@@ -249,7 +280,8 @@ class TrackingService : LifecycleService() {
             elapsedSeconds.clear()
             dirtyPackages.clear()
             ticksSincePersist = 0
-            updateOverlayText(0L)
+            updateOverlay(0L)
+            updateNotification()
         }
     }
 
@@ -259,6 +291,7 @@ class TrackingService : LifecycleService() {
         if (!UsageStatsHelper.hasOverlayPermission(this)) return
         if (overlayView != null) return
 
+        val saved = cachedOverlayPosition
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -267,30 +300,50 @@ class TrackingService : LifecycleService() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            x = 24
-            y = 120
+            x = saved?.first ?: 24
+            y = saved?.second ?: 120
         }
         overlayParams = params
 
         val view = LayoutInflater.from(this).inflate(R.layout.overlay_timer, null)
         overlayTimerText = view.findViewById(R.id.tv_timer)
-        overlayTimerText?.text = FormatUtil.formatSeconds(initialSeconds)
         view.setOnTouchListener(overlayDragListener)
 
-        windowManager.addView(view, params)
-        overlayView = view
-    }
-
-    private fun removeOverlay() {
-        overlayView?.let {
-            windowManager.removeView(it)
+        try {
+            windowManager.addView(view, params)
+            overlayView = view
+            updateOverlay(initialSeconds)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to add overlay view", e)
             overlayView = null
             overlayTimerText = null
         }
     }
 
-    private fun updateOverlayText(seconds: Long) {
+    private fun removeOverlay() {
+        val view = overlayView ?: return
+        overlayView = null
+        overlayTimerText = null
+        try {
+            windowManager.removeView(view)
+        } catch (e: IllegalArgumentException) {
+            // View was already detached by the system — safe to ignore.
+            Log.d(TAG, "removeView no-op: ${e.message}")
+        }
+    }
+
+    private fun updateOverlay(seconds: Long) {
         overlayTimerText?.text = FormatUtil.formatSeconds(seconds)
+        val bg = overlayView?.background
+        if (bg is GradientDrawable) {
+            bg.setColor(colorForElapsed(seconds))
+        }
+    }
+
+    private fun colorForElapsed(seconds: Long): Int = when {
+        seconds < WARN_AFTER_SECONDS -> COLOR_NEUTRAL
+        seconds < ALERT_AFTER_SECONDS -> COLOR_WARN
+        else -> COLOR_ALERT
     }
 
     private val overlayDragListener = View.OnTouchListener { view, event ->
@@ -306,12 +359,20 @@ class TrackingService : LifecycleService() {
                 overlayParams?.let { p ->
                     p.x = dragInitialX + (dragTouchX - event.rawX).toInt()
                     p.y = dragInitialY + (event.rawY - dragTouchY).toInt()
-                    windowManager.updateViewLayout(view, p)
+                    try {
+                        windowManager.updateViewLayout(view, p)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "updateViewLayout failed during drag", e)
+                    }
                 }
                 true
             }
             MotionEvent.ACTION_UP -> {
                 view.performClick()
+                overlayParams?.let { p ->
+                    cachedOverlayPosition = p.x to p.y
+                    lifecycleScope.launch { dataStore.saveOverlayPosition(p.x, p.y) }
+                }
                 true
             }
             else -> false

@@ -1,16 +1,19 @@
 package com.timeawareness.app.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,19 +34,19 @@ class MainActivity : ComponentActivity() {
 
     private val overlayPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) {
-        maybeStartService()
-    }
+    ) { maybeStartService() }
 
     private val usageStatsLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) {
-        maybeStartService()
-    }
+    ) { maybeStartService() }
+
+    private val batteryExemptionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { /* result re-evaluated on next ON_RESUME via the state observer */ }
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* Result not needed — service runs either way; user can re-enable in Settings. */ }
+    ) { /* result not strictly needed — service runs either way */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,16 +57,23 @@ class MainActivity : ComponentActivity() {
                 val appStates by viewModel.appStates.collectAsState()
                 val masterEnabled by viewModel.masterEnabled.collectAsState()
 
-                var hasUsageStats by remember { mutableStateOf(UsageStatsHelper.hasUsageStatsPermission(this)) }
-                var hasOverlay by remember { mutableStateOf(UsageStatsHelper.hasOverlayPermission(this)) }
+                var hasUsageStats by remember {
+                    mutableStateOf(UsageStatsHelper.hasUsageStatsPermission(this))
+                }
+                var hasOverlay by remember {
+                    mutableStateOf(UsageStatsHelper.hasOverlayPermission(this))
+                }
+                var isBatteryUnrestricted by remember {
+                    mutableStateOf(isIgnoringBatteryOptimizations())
+                }
 
-                // Re-check permissions every time the activity returns to the foreground.
                 val lifecycleOwner = LocalLifecycleOwner.current
-                androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+                DisposableEffect(lifecycleOwner) {
                     val observer = LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME) {
                             hasUsageStats = UsageStatsHelper.hasUsageStatsPermission(this@MainActivity)
                             hasOverlay = UsageStatsHelper.hasOverlayPermission(this@MainActivity)
+                            isBatteryUnrestricted = isIgnoringBatteryOptimizations()
                             maybeStartService()
                         }
                     }
@@ -76,17 +86,23 @@ class MainActivity : ComponentActivity() {
                     masterEnabled = masterEnabled,
                     hasUsageStatsPermission = hasUsageStats,
                     hasOverlayPermission = hasOverlay,
+                    isBatteryUnrestricted = isBatteryUnrestricted,
                     onMasterToggle = { enabled ->
                         viewModel.setMasterEnabled(enabled)
-                        if (enabled) maybeStartService()
-                        // When disabled, the service observes the flow and stops itself.
+                        // Use the freshly-toggled value rather than reading the StateFlow,
+                        // which won't have observed the DataStore write yet.
+                        if (enabled && UsageStatsHelper.hasUsageStatsPermission(this)) {
+                            TrackingService.start(this)
+                        }
                     },
                     onRequestUsageStats = { requestUsageStatsPermission() },
                     onRequestOverlay = { requestOverlayPermission() },
+                    onRequestBatteryExemption = { requestBatteryExemption() },
                     onToggleMonitored = { pkg, enabled ->
                         viewModel.setMonitored(pkg, enabled)
                         maybeStartService()
-                    }
+                    },
+                    onResetTimer = { pkg -> viewModel.resetTimer(pkg) }
                 )
             }
         }
@@ -102,9 +118,27 @@ class MainActivity : ComponentActivity() {
         val granted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.POST_NOTIFICATIONS
         ) == PackageManager.PERMISSION_GRANTED
-        if (!granted) {
+        if (granted) return
+        // shouldShowRequestPermissionRationale returns false on the *first* request OR after
+        // permanent denial. We can't easily distinguish, so we only auto-request once per
+        // process; if denied, the in-app notification banner / channel can prompt later.
+        if (!hasAskedForNotificationsThisSession) {
+            hasAskedForNotificationsThisSession = true
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun requestBatteryExemption() {
+        val intent = Intent(
+            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            Uri.parse("package:$packageName")
+        )
+        batteryExemptionLauncher.launch(intent)
     }
 
     private fun requestUsageStatsPermission() {
@@ -117,5 +151,11 @@ class MainActivity : ComponentActivity() {
             Uri.parse("package:$packageName")
         )
         overlayPermissionLauncher.launch(intent)
+    }
+
+    companion object {
+        // Process-scoped flag so we don't re-prompt on every activity recreate
+        // (config change, etc.) within the same process.
+        private var hasAskedForNotificationsThisSession = false
     }
 }

@@ -7,7 +7,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -23,13 +27,14 @@ import com.timeawareness.app.util.FormatUtil
 fun AppTimerRow(
     state: AppTimerState,
     onToggle: (Boolean) -> Unit,
+    onReset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             AppIcon(packageName = state.packageName, modifier = Modifier.size(40.dp))
@@ -48,6 +53,16 @@ fun AppTimerRow(
                         text = "Today: ${FormatUtil.formatSeconds(state.elapsedSeconds)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            if (state.isMonitored && state.elapsedSeconds > 0) {
+                IconButton(onClick = onReset) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Reset today's timer",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
