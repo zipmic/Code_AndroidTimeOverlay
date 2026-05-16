@@ -20,12 +20,10 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.service.TrackingService
 import com.timeawareness.app.ui.screens.MainScreen
 import com.timeawareness.app.ui.theme.TimeAwarenessTheme
 import com.timeawareness.app.util.UsageStatsHelper
-import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
 
@@ -99,8 +97,7 @@ class MainActivity : ComponentActivity() {
 
     private fun maybeStartService() {
         if (!UsageStatsHelper.hasUsageStatsPermission(this)) return
-        val masterOn = runBlocking { TimerDataStore(this@MainActivity).isMasterEnabled() }
-        if (masterOn) TrackingService.start(this)
+        if (viewModel.masterEnabled.value) TrackingService.start(this)
     }
 
     private fun requestNotificationPermissionIfNeeded() {
