@@ -13,7 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 fun AppIcon(packageName: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val icon: Drawable? = remember(packageName) {
-        try { context.packageManager.getApplicationIcon(packageName) }
+        try { context.packageManager.getApplicationIcon(packageName).mutate() }
         catch (e: Exception) { null }
     }
     Canvas(modifier = modifier) {

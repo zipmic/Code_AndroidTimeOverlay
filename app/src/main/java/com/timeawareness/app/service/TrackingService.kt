@@ -1,12 +1,10 @@
 package com.timeawareness.app.service
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.IBinder
 import android.view.Gravity
@@ -15,6 +13,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
+import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.timeawareness.app.R
@@ -26,16 +25,26 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
+/**
+ * Foreground service that:
+ *   • polls UsageStatsManager every second for foreground app transitions,
+ *   • increments per-app daily counters while a monitored app is in focus,
+ *   • shows/hides a draggable overlay timer,
+ *   • persists state to DataStore in batched flushes (every PERSIST_INTERVAL_SECONDS),
+ *   • resets counters on a date change.
+ */
 class TrackingService : LifecycleService() {
 
     companion object {
-        const val CHANNEL_ID = "tracking_service"
-        const val NOTIFICATION_ID = 1
+        private const val CHANNEL_ID = "tracking_service"
+        private const val NOTIFICATION_ID = 1
+        private const val POLL_WINDOW_MS = 10_000L
+        private const val PERSIST_INTERVAL_SECONDS = 5
 
         fun start(context: Context) {
-            val intent = Intent(context, TrackingService::class.java)
-            context.startForegroundService(intent)
+            context.startForegroundService(Intent(context, TrackingService::class.java))
         }
 
         fun stop(context: Context) {
@@ -48,13 +57,16 @@ class TrackingService : LifecycleService() {
     private var overlayView: View? = null
     private var overlayTimerText: TextView? = null
 
-    // In-memory counters. Persisted to DataStore every tick.
     private val elapsedSeconds = mutableMapOf<String, Long>()
+    private val dirtyPackages = mutableSetOf<String>()
+    private var ticksSincePersist = 0
+
     private var monitoredApps = setOf<String>()
     private var currentForegroundPkg: String? = null
+    private var currentDate: LocalDate = LocalDate.now()
+    private var lastPollTime = System.currentTimeMillis()
     private var tickJob: Job? = null
 
-    // Overlay drag state
     private var overlayParams: WindowManager.LayoutParams? = null
     private var dragInitialX = 0
     private var dragInitialY = 0
@@ -70,12 +82,19 @@ class TrackingService : LifecycleService() {
         startTickLoop()
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        return START_STICKY
+    }
+
     override fun onBind(intent: Intent): IBinder? = super.onBind(intent)
 
     override fun onDestroy() {
-        super.onDestroy()
+        // Flush any unpersisted seconds before exiting.
+        lifecycleScope.launch { flushDirty() }
         removeOverlay()
         tickJob?.cancel()
+        super.onDestroy()
     }
 
     // ── Notification ─────────────────────────────────────────────────────────
@@ -92,7 +111,7 @@ class TrackingService : LifecycleService() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
         )
-        val notification = Notification.Builder(this, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Time Awareness")
             .setContentText("Monitoring active")
             .setSmallIcon(R.drawable.ic_timer)
@@ -109,12 +128,18 @@ class TrackingService : LifecycleService() {
         lifecycleScope.launch {
             dataStore.monitoredAppsFlow().collect { apps ->
                 monitoredApps = apps
-                // Seed in-memory counters for newly added apps.
                 apps.forEach { pkg ->
                     if (!elapsedSeconds.containsKey(pkg)) {
                         elapsedSeconds[pkg] = dataStore.elapsedSecondsFlow(pkg).first()
                     }
                 }
+                // If the user removed an app while its overlay was shown, hide it.
+                val fg = currentForegroundPkg
+                if (overlayView != null && (fg == null || fg !in apps)) {
+                    removeOverlay()
+                }
+                // Stop the service when nothing is being monitored.
+                if (apps.isEmpty()) stopSelf()
             }
         }
     }
@@ -132,31 +157,59 @@ class TrackingService : LifecycleService() {
 
     private suspend fun tick() {
         if (!UsageStatsHelper.hasUsageStatsPermission(this)) return
+        if (monitoredApps.isEmpty()) return
 
-        val foreground = UsageStatsHelper.getForegroundPackage(this)
+        handleMidnightRollover()
+
+        val foreground = UsageStatsHelper.getForegroundPackage(
+            context = this,
+            previous = currentForegroundPkg,
+            sinceMillis = lastPollTime - 1_000,
+        )
+        lastPollTime = System.currentTimeMillis()
 
         if (foreground != currentForegroundPkg) {
-            // App changed — hide overlay for the old app.
-            if (currentForegroundPkg != null && monitoredApps.contains(currentForegroundPkg)) {
-                removeOverlay()
-            }
+            if (currentForegroundPkg in monitoredApps) removeOverlay()
             currentForegroundPkg = foreground
-
-            // Show overlay for the new app if it is monitored.
-            if (foreground != null && monitoredApps.contains(foreground)) {
-                val seconds = elapsedSeconds[foreground] ?: 0L
-                showOverlay(seconds)
+            if (foreground in monitoredApps) {
+                showOverlay(elapsedSeconds[foreground] ?: 0L)
             }
         }
 
-        // Increment and persist if a monitored app is active.
         val pkg = currentForegroundPkg ?: return
-        if (!monitoredApps.contains(pkg)) return
+        if (pkg !in monitoredApps) return
 
         val updated = (elapsedSeconds[pkg] ?: 0L) + 1L
         elapsedSeconds[pkg] = updated
-        dataStore.saveElapsedSeconds(pkg, updated)
+        dirtyPackages += pkg
         updateOverlayText(updated)
+
+        // Batch writes to DataStore.
+        ticksSincePersist++
+        if (ticksSincePersist >= PERSIST_INTERVAL_SECONDS) {
+            flushDirty()
+            ticksSincePersist = 0
+        }
+    }
+
+    private suspend fun flushDirty() {
+        if (dirtyPackages.isEmpty()) return
+        val snapshot = dirtyPackages.toList()
+        dirtyPackages.clear()
+        snapshot.forEach { pkg ->
+            dataStore.saveElapsedSeconds(pkg, elapsedSeconds[pkg] ?: 0L)
+        }
+    }
+
+    private fun handleMidnightRollover() {
+        val today = LocalDate.now()
+        if (today != currentDate) {
+            currentDate = today
+            elapsedSeconds.clear()
+            dirtyPackages.clear()
+            ticksSincePersist = 0
+            updateOverlayText(0L)
+        }
     }
 
     // ── Overlay ───────────────────────────────────────────────────────────────
@@ -181,7 +234,6 @@ class TrackingService : LifecycleService() {
         val view = LayoutInflater.from(this).inflate(R.layout.overlay_timer, null)
         overlayTimerText = view.findViewById(R.id.tv_timer)
         overlayTimerText?.text = FormatUtil.formatSeconds(initialSeconds)
-
         view.setOnTouchListener(overlayDragListener)
 
         windowManager.addView(view, params)
@@ -215,6 +267,10 @@ class TrackingService : LifecycleService() {
                     p.y = dragInitialY + (event.rawY - dragTouchY).toInt()
                     windowManager.updateViewLayout(view, p)
                 }
+                true
+            }
+            MotionEvent.ACTION_UP -> {
+                view.performClick()
                 true
             }
             else -> false
