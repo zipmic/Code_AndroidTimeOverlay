@@ -5,7 +5,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
+import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -24,6 +26,7 @@ import com.timeawareness.app.util.UsageStatsHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.time.LocalDate
 
 /**
@@ -42,6 +45,9 @@ class TrackingService : LifecycleService() {
         private const val TICK_INTERVAL_MS = 2_000L
         private const val PERSIST_INTERVAL_TICKS = 3   // every 6s with 2s tick
         private const val PERMISSION_RECHECK_MS = 30_000L
+        // On the first tick we don't know what the user is already doing — look back
+        // far enough to find the most recent foreground transition.
+        private const val INITIAL_LOOKBACK_MS = 60 * 60 * 1000L  // 1 hour
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, TrackingService::class.java))
@@ -94,10 +100,12 @@ class TrackingService : LifecycleService() {
     override fun onBind(intent: Intent): IBinder? = super.onBind(intent)
 
     override fun onDestroy() {
-        // Flush any unpersisted seconds before exiting.
-        lifecycleScope.launch { flushDirty() }
         removeOverlay()
         tickJob?.cancel()
+        // Block briefly so the last few seconds of usage are persisted before the
+        // process is reclaimed. Service.onDestroy() permits up to 20s of work and
+        // DataStore writes complete in well under 100ms.
+        runBlocking { flushDirty() }
         super.onDestroy()
     }
 
@@ -123,7 +131,17 @@ class TrackingService : LifecycleService() {
             .setOngoing(true)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        // Android 14+ requires the foreground service type to match the manifest declaration;
+        // calling the 2-arg overload on those devices throws MissingForegroundServiceTypeException.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
     // ── Monitored app list ────────────────────────────────────────────────────
@@ -157,6 +175,9 @@ class TrackingService : LifecycleService() {
     // ── Main tick loop ────────────────────────────────────────────────────────
 
     private fun startTickLoop() {
+        // Seed lastPollTime so the first queryEvents call looks back an hour — wide enough
+        // to catch the FOREGROUND event for whatever app the user is already inside.
+        lastPollTime = System.currentTimeMillis() - INITIAL_LOOKBACK_MS
         tickJob = lifecycleScope.launch {
             while (true) {
                 delay(TICK_INTERVAL_MS)
