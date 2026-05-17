@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
                 val appStates by viewModel.appStates.collectAsState()
                 val masterEnabled by viewModel.masterEnabled.collectAsState()
                 val overlaySize by viewModel.overlaySize.collectAsState()
+                val overlayStyle by viewModel.overlayStyle.collectAsState()
 
                 var hasUsageStats by remember {
                     mutableStateOf(UsageStatsHelper.hasUsageStatsPermission(this))
@@ -86,6 +87,7 @@ class MainActivity : ComponentActivity() {
                     appStates = appStates,
                     masterEnabled = masterEnabled,
                     overlaySize = overlaySize,
+                    overlayStyle = overlayStyle,
                     hasUsageStatsPermission = hasUsageStats,
                     hasOverlayPermission = hasOverlay,
                     isBatteryUnrestricted = isBatteryUnrestricted,
@@ -98,6 +100,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onOverlaySizeChange = { viewModel.setOverlaySize(it) },
+                    onOverlayStyleChange = { viewModel.setOverlayStyle(it) },
                     onRequestUsageStats = { requestUsageStatsPermission() },
                     onRequestOverlay = { requestOverlayPermission() },
                     onRequestBatteryExemption = { requestBatteryExemption() },

@@ -34,10 +34,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.model.AppTimerState
 import com.timeawareness.app.ui.components.AppTimerRow
 import com.timeawareness.app.ui.components.PermissionBanner
+import com.timeawareness.app.ui.components.ProSettingsSection
 import com.timeawareness.app.util.FormatUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,8 +51,10 @@ fun MainScreen(
     hasOverlayPermission: Boolean,
     isBatteryUnrestricted: Boolean,
     overlaySize: Int,
+    overlayStyle: OverlayStyle,
     onMasterToggle: (Boolean) -> Unit,
     onOverlaySizeChange: (Int) -> Unit,
+    onOverlayStyleChange: (OverlayStyle) -> Unit,
     onRequestUsageStats: () -> Unit,
     onRequestOverlay: () -> Unit,
     onRequestBatteryExemption: () -> Unit,
@@ -169,6 +173,14 @@ fun MainScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
+            )
+
+            ProSettingsSection(
+                style = overlayStyle,
+                onStyleChange = onOverlayStyleChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
             )
 
             OutlinedTextField(

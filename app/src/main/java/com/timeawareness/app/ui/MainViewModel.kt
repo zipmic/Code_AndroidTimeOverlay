@@ -3,6 +3,7 @@ package com.timeawareness.app.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.data.TimerDataStore.Companion.OVERLAY_SIZE_MAX
 import com.timeawareness.app.data.TimerDataStore.Companion.OVERLAY_SIZE_MIN
@@ -29,10 +30,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val overlaySize: StateFlow<Int> = dataStore.overlaySizeFlow()
         .stateIn(viewModelScope, SharingStarted.Eagerly, TimerDataStore.OVERLAY_SIZE_DEFAULT)
 
+    val overlayStyle: StateFlow<OverlayStyle> = dataStore.overlayStyleFlow()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, OverlayStyle())
+
     /**
-     * Apps shown in the list, sorted with monitored apps first and the rest
-     * alphabetically below. Built from a single combined snapshot flow that
-     * only emits when DataStore actually changes.
+     * Apps shown in the list, sorted monitored-first then alphabetically.
+     * Built from a single combined snapshot flow that only emits on real changes.
      */
     val appStates: StateFlow<List<AppTimerState>> = combine(
         _installedApps,
@@ -41,9 +44,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         installed
             .map { (pkg, label) ->
                 AppTimerState(
-                    packageName = pkg,
-                    appLabel = label,
-                    isMonitored = pkg in snapshot.monitoredApps,
+                    packageName    = pkg,
+                    appLabel       = label,
+                    isMonitored    = pkg in snapshot.monitoredApps,
                     elapsedSeconds = snapshot.elapsedToday[pkg] ?: 0L,
                 )
             }
@@ -74,8 +77,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setOverlaySize(sp: Int) {
-        val clamped = sp.coerceIn(OVERLAY_SIZE_MIN, OVERLAY_SIZE_MAX)
-        viewModelScope.launch { dataStore.saveOverlaySize(clamped) }
+        viewModelScope.launch { dataStore.saveOverlaySize(sp.coerceIn(OVERLAY_SIZE_MIN, OVERLAY_SIZE_MAX)) }
+    }
+
+    fun setOverlayStyle(style: OverlayStyle) {
+        viewModelScope.launch { dataStore.saveOverlayStyle(style) }
     }
 
     fun refreshInstalledApps() {
