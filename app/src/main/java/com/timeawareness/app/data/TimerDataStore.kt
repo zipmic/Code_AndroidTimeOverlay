@@ -37,7 +37,7 @@ class TimerDataStore(private val context: Context) {
     companion object {
         const val OVERLAY_SIZE_DEFAULT = 14
         const val OVERLAY_SIZE_MIN = 10
-        const val OVERLAY_SIZE_MAX = 32
+        const val OVERLAY_SIZE_MAX = 60
     }
 
     fun monitoredAppsFlow(): Flow<Set<String>> =

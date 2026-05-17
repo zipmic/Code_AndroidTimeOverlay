@@ -92,6 +92,13 @@ class TrackingService : LifecycleService() {
 
     private var cachedOverlayTextSp = TimerDataStore.OVERLAY_SIZE_DEFAULT
 
+    // Display ticker — runs every 1s independently of the 2s tracking tick.
+    // displayBaseSeconds + wall-clock elapsed since displayBaseTimeMs gives the
+    // interpolated value shown on the overlay, keeping it visually smooth.
+    private var displayJob: Job? = null
+    private var displayBaseSeconds = 0L
+    private var displayBaseTimeMs = 0L
+
     private var overlayParams: WindowManager.LayoutParams? = null
     private var cachedOverlayPosition: Pair<Int, Int>? = null
     private var dragInitialX = 0
@@ -126,6 +133,7 @@ class TrackingService : LifecycleService() {
 
     override fun onDestroy() {
         removeOverlay()
+        displayJob?.cancel()
         tickJob?.cancel()
         runBlocking { flushDirty() }
         super.onDestroy()
@@ -249,7 +257,9 @@ class TrackingService : LifecycleService() {
         val updated = (elapsedSeconds[pkg] ?: 0L) + tickSeconds
         elapsedSeconds[pkg] = updated
         dirtyPackages += pkg
-        updateOverlay(updated)
+        // Stamp the authoritative value; the 1s display ticker interpolates from here.
+        displayBaseSeconds = updated
+        displayBaseTimeMs = System.currentTimeMillis()
 
         ticksSincePersist++
         if (ticksSincePersist >= PERSIST_INTERVAL_TICKS) {
@@ -284,7 +294,8 @@ class TrackingService : LifecycleService() {
             elapsedSeconds.clear()
             dirtyPackages.clear()
             ticksSincePersist = 0
-            updateOverlay(0L)
+            displayBaseSeconds = 0L
+            displayBaseTimeMs = System.currentTimeMillis()
             updateNotification()
         }
     }
@@ -300,6 +311,27 @@ class TrackingService : LifecycleService() {
 
     private fun applyOverlayTextSize() {
         overlayTimerText?.setTextSize(TypedValue.COMPLEX_UNIT_SP, cachedOverlayTextSp.toFloat())
+    }
+
+    // ── Display ticker ────────────────────────────────────────────────────────
+
+    private fun startDisplayTicker(initialSeconds: Long) {
+        displayBaseSeconds = initialSeconds
+        displayBaseTimeMs = System.currentTimeMillis()
+        displayJob?.cancel()
+        displayJob = lifecycleScope.launch {
+            while (true) {
+                val shown = displayBaseSeconds +
+                    (System.currentTimeMillis() - displayBaseTimeMs) / 1_000L
+                updateOverlay(shown)
+                delay(1_000L)
+            }
+        }
+    }
+
+    private fun stopDisplayTicker() {
+        displayJob?.cancel()
+        displayJob = null
     }
 
     // ── Overlay ───────────────────────────────────────────────────────────────
@@ -330,7 +362,7 @@ class TrackingService : LifecycleService() {
             windowManager.addView(view, params)
             overlayView = view
             applyOverlayTextSize()
-            updateOverlay(initialSeconds)
+            startDisplayTicker(initialSeconds)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to add overlay view", e)
             overlayView = null
@@ -340,6 +372,7 @@ class TrackingService : LifecycleService() {
 
     private fun removeOverlay() {
         val view = overlayView ?: return
+        stopDisplayTicker()
         overlayView = null
         overlayTimerText = null
         try {
