@@ -1,12 +1,17 @@
 package com.timeawareness.app.ui
 
 import android.app.Application
+import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.timeawareness.app.data.ActiveSchedule
 import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
+import com.timeawareness.app.util.CsvExporter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_MINUTES_MIN
 import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_WARN_MAX
@@ -127,6 +132,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setActiveSchedule(schedule: ActiveSchedule) {
         viewModelScope.launch { dataStore.saveActiveSchedule(schedule) }
+    }
+
+    suspend fun exportHistory(): Uri? = withContext(Dispatchers.IO) {
+        val app      = getApplication<Application>()
+        val monitored = dataStore.readMonitoredApps()
+        if (monitored.isEmpty()) return@withContext null
+        val history  = dataStore.readAllHistory(monitored)
+        val csv      = CsvExporter.buildCsv(history) { pkg ->
+            try {
+                app.packageManager
+                    .getApplicationLabel(app.packageManager.getApplicationInfo(pkg, 0))
+                    .toString()
+            } catch (e: Exception) { pkg }
+        }
+        val file = CsvExporter.writeToCache(app, csv)
+        FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", file)
     }
 
     fun refreshInstalledApps() {

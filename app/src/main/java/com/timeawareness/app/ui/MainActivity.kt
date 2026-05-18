@@ -120,8 +120,9 @@ class MainActivity : ComponentActivity() {
                     onClearAppThreshold  = { pkg -> viewModel.clearAppThreshold(pkg) },
                     dailySummaryEnabled    = dailySummaryEnabled,
                     onDailySummaryToggle  = { viewModel.setDailySummaryEnabled(it) },
-                    activeSchedule        = activeSchedule,
+                    activeSchedule         = activeSchedule,
                     onActiveScheduleChange = { viewModel.setActiveSchedule(it) },
+                    onExportHistory        = { viewModel.exportHistory() },
                 )
             }
         }

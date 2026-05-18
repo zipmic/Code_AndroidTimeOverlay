@@ -342,6 +342,11 @@ class TimerDataStore(private val context: Context) {
     private fun serializeHistory(history: Map<LocalDate, Long>): String =
         history.entries.joinToString("|") { "${it.key}=${it.value}" }
 
+    suspend fun readAllHistory(packages: Set<String>): Map<String, Map<LocalDate, Long>> {
+        val prefs = context.dataStore.data.first()
+        return packages.associateWith { pkg -> parseHistory(prefs[historyKey(pkg)] ?: "") }
+    }
+
     fun historyFlow(pkg: String): Flow<Map<LocalDate, Long>> =
         context.dataStore.data
             .map { prefs -> parseHistory(prefs[historyKey(pkg)] ?: "") }

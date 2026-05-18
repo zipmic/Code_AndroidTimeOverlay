@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import android.content.Intent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,13 +29,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.timeawareness.app.data.ActiveSchedule
@@ -47,6 +52,7 @@ import com.timeawareness.app.ui.components.ProSettingsSection
 import com.timeawareness.app.ui.components.WeeklyReportDialog
 import com.timeawareness.app.util.FormatUtil
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,12 +83,29 @@ fun MainScreen(
     onDailySummaryToggle: (Boolean) -> Unit,
     activeSchedule: ActiveSchedule,
     onActiveScheduleChange: (ActiveSchedule) -> Unit,
+    onExportHistory: suspend () -> android.net.Uri?,
 ) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+
     var query by remember { mutableStateOf("") }
     var resetTargetPkg by remember { mutableStateOf<String?>(null) }
     var resetTargetLabel by remember { mutableStateOf("") }
     var historyTarget by remember { mutableStateOf<AppTimerState?>(null) }
     var showWeeklyReport by remember { mutableStateOf(false) }
+    var exportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    exportUri?.let { uri ->
+        LaunchedEffect(uri) {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intent, "Export history"))
+            exportUri = null
+        }
+    }
 
     val monitoredApps = appStates.filter { it.isMonitored }
     val totalSeconds = monitoredApps.sumOf { it.elapsedSeconds }
@@ -99,6 +122,11 @@ fun MainScreen(
                     if (monitoredApps.isNotEmpty()) {
                         IconButton(onClick = { showWeeklyReport = true }) {
                             Icon(Icons.Default.DateRange, contentDescription = "Weekly report")
+                        }
+                        IconButton(onClick = {
+                            scope.launch { exportUri = onExportHistory() }
+                        }) {
+                            Icon(Icons.Default.Share, contentDescription = "Export CSV")
                         }
                     }
                     Switch(
