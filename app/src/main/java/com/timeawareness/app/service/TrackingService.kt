@@ -59,8 +59,6 @@ class TrackingService : LifecycleService() {
         // Fixed colours for time-based warn/alert thresholds (not user-customisable).
         private const val COLOR_WARN  = 0xCCB45309.toInt()   // amber
         private const val COLOR_ALERT = 0xCCB91C1C.toInt()   // red
-        private const val WARN_AFTER_SECONDS  = 30L * 60     // 30 min
-        private const val ALERT_AFTER_SECONDS = 60L * 60     // 60 min
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, TrackingService::class.java))
@@ -94,6 +92,11 @@ class TrackingService : LifecycleService() {
 
     private var cachedOverlayTextSp = TimerDataStore.OVERLAY_SIZE_DEFAULT
     private var cachedOverlayStyle  = OverlayStyle()
+
+    // Per-app thresholds: updated reactively when the foreground app changes.
+    private var currentWarnSeconds  = TimerDataStore.WARN_MINUTES_DEFAULT  * 60L
+    private var currentAlertSeconds = TimerDataStore.ALERT_MINUTES_DEFAULT * 60L
+    private var currentAppThresholdsJob: Job? = null
 
     // Display ticker — smooth 1 s visual refresh independent of the 2 s tracking tick.
     private var displayJob: Job?     = null
@@ -145,6 +148,7 @@ class TrackingService : LifecycleService() {
         removeOverlay()
         displayJob?.cancel()
         moveJob?.cancel()
+        currentAppThresholdsJob?.cancel()
         tickJob?.cancel()
         runBlocking { flushDirty() }
         super.onDestroy()
@@ -216,6 +220,16 @@ class TrackingService : LifecycleService() {
         }
     }
 
+    private fun startThresholdObserver(pkg: String) {
+        currentAppThresholdsJob?.cancel()
+        currentAppThresholdsJob = lifecycleScope.launch {
+            dataStore.resolvedThresholdsFlow(pkg).collect { (warnMin, alertMin) ->
+                currentWarnSeconds  = warnMin  * 60L
+                currentAlertSeconds = alertMin * 60L
+            }
+        }
+    }
+
     private fun observeOverlaySize() {
         lifecycleScope.launch {
             dataStore.overlaySizeFlow().collect { sp ->
@@ -272,7 +286,10 @@ class TrackingService : LifecycleService() {
         if (foreground != currentForegroundPkg) {
             if (currentForegroundPkg in monitoredApps) removeOverlay()
             currentForegroundPkg = foreground
-            if (foreground in monitoredApps) showOverlay(elapsedSeconds[foreground] ?: 0L)
+            if (foreground in monitoredApps) {
+                showOverlay(elapsedSeconds[foreground] ?: 0L)
+                startThresholdObserver(foreground)
+            }
             updateNotification()
         }
 
@@ -342,8 +359,8 @@ class TrackingService : LifecycleService() {
     private fun colorForElapsed(seconds: Long): Int {
         val s = cachedOverlayStyle
         return when {
-            seconds < WARN_AFTER_SECONDS  -> ColorUtil.hslToArgb(s.hue, s.saturation, s.lightness, s.alpha)
-            seconds < ALERT_AFTER_SECONDS -> COLOR_WARN
+            seconds < currentWarnSeconds  -> ColorUtil.hslToArgb(s.hue, s.saturation, s.lightness, s.alpha)
+            seconds < currentAlertSeconds -> COLOR_WARN
             else                          -> COLOR_ALERT
         }
     }
@@ -472,7 +489,11 @@ class TrackingService : LifecycleService() {
         val view = overlayView ?: return
         stopDisplayTicker()
         moveJob?.cancel()
-        moveJob  = null
+        moveJob = null
+        currentAppThresholdsJob?.cancel()
+        currentAppThresholdsJob = null
+        currentWarnSeconds  = TimerDataStore.WARN_MINUTES_DEFAULT  * 60L
+        currentAlertSeconds = TimerDataStore.ALERT_MINUTES_DEFAULT * 60L
         overlayView      = null
         overlayTimerText = null
         try {

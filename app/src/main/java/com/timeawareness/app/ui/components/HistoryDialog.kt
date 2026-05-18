@@ -9,18 +9,26 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Box
+import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_ALERT_MAX
+import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_MINUTES_MIN
+import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_WARN_MAX
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -43,9 +51,14 @@ import java.util.Locale
 fun HistoryDialog(
     appLabel: String,
     historyFlow: Flow<Map<LocalDate, Long>>,
+    globalThresholds: Pair<Int, Int>,
+    appThresholdsFlow: Flow<Pair<Int, Int>?>,
+    onSaveThreshold: (warnMin: Int, alertMin: Int) -> Unit,
+    onClearThreshold: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val history by historyFlow.collectAsState(initial = emptyMap())
+    val appThresholds by appThresholdsFlow.collectAsState(initial = null)
     var selectedDays by remember { mutableIntStateOf(7) }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -100,6 +113,16 @@ fun HistoryDialog(
                 }
 
                 Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+
+                AppThresholdSection(
+                    appThresholds = appThresholds,
+                    globalThresholds = globalThresholds,
+                    onSave = onSaveThreshold,
+                    onClear = onClearThreshold,
+                )
+
                 HorizontalDivider()
                 Spacer(Modifier.height(8.dp))
 
@@ -168,6 +191,75 @@ private fun BarChart(
                     sizeSp = labelSizePx,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun AppThresholdSection(
+    appThresholds: Pair<Int, Int>?,
+    globalThresholds: Pair<Int, Int>,
+    onSave: (warnMin: Int, alertMin: Int) -> Unit,
+    onClear: () -> Unit,
+) {
+    val (gWarn, gAlert) = globalThresholds
+    var customEnabled by remember { mutableStateOf(appThresholds != null) }
+    var warnMin by remember { mutableIntStateOf(appThresholds?.first ?: gWarn) }
+    var alertMin by remember { mutableIntStateOf(appThresholds?.second ?: gAlert) }
+
+    Text("App Thresholds", style = MaterialTheme.typography.labelLarge)
+    Spacer(Modifier.height(4.dp))
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = if (customEnabled) "Custom thresholds for this app"
+                   else "Using global (${gWarn}m / ${gAlert}m)",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Switch(
+            checked = customEnabled,
+            onCheckedChange = { enabled ->
+                customEnabled = enabled
+                if (enabled) onSave(warnMin, alertMin) else onClear()
+            },
+        )
+    }
+
+    AnimatedVisibility(visible = customEnabled) {
+        Column {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Warn after  ${warnMin}m",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Slider(
+                value = warnMin.toFloat(),
+                onValueChange = {
+                    warnMin = it.toInt()
+                    alertMin = alertMin.coerceAtLeast(warnMin + 1)
+                    onSave(warnMin, alertMin)
+                },
+                valueRange = THRESHOLD_MINUTES_MIN.toFloat()..THRESHOLD_WARN_MAX.toFloat(),
+            )
+            Text(
+                "Alert after  ${alertMin}m",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Slider(
+                value = alertMin.toFloat(),
+                onValueChange = {
+                    alertMin = it.toInt()
+                    onSave(warnMin, alertMin)
+                },
+                valueRange = (warnMin + 1).toFloat()..THRESHOLD_ALERT_MAX.toFloat(),
+            )
         }
     }
 }

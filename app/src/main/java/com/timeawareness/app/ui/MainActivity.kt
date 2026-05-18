@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
                 val masterEnabled by viewModel.masterEnabled.collectAsState()
                 val overlaySize by viewModel.overlaySize.collectAsState()
                 val overlayStyle by viewModel.overlayStyle.collectAsState()
+                val globalThresholds by viewModel.globalThresholds.collectAsState()
 
                 var hasUsageStats by remember {
                     mutableStateOf(UsageStatsHelper.hasUsageStatsPermission(this))
@@ -110,6 +111,11 @@ class MainActivity : ComponentActivity() {
                     },
                     onResetTimer = { pkg -> viewModel.resetTimer(pkg) },
                     onGetHistory = { pkg -> viewModel.historyFor(pkg) },
+                    globalThresholds = globalThresholds,
+                    onGlobalThresholdsChange = { w, a -> viewModel.setGlobalThresholds(w, a) },
+                    onGetAppThresholds = { pkg -> viewModel.appThresholdsFor(pkg) },
+                    onSaveAppThreshold = { pkg, w, a -> viewModel.setAppThreshold(pkg, w, a) },
+                    onClearAppThreshold = { pkg -> viewModel.clearAppThreshold(pkg) },
                 )
             }
         }

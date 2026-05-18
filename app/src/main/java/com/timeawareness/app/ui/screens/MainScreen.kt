@@ -64,6 +64,11 @@ fun MainScreen(
     onToggleMonitored: (String, Boolean) -> Unit,
     onResetTimer: (String) -> Unit,
     onGetHistory: (String) -> Flow<Map<LocalDate, Long>>,
+    globalThresholds: Pair<Int, Int>,
+    onGlobalThresholdsChange: (warnMin: Int, alertMin: Int) -> Unit,
+    onGetAppThresholds: (String) -> Flow<Pair<Int, Int>?>,
+    onSaveAppThreshold: (pkg: String, warnMin: Int, alertMin: Int) -> Unit,
+    onClearAppThreshold: (pkg: String) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var resetTargetPkg by remember { mutableStateOf<String?>(null) }
@@ -183,6 +188,8 @@ fun MainScreen(
             ProSettingsSection(
                 style = overlayStyle,
                 onStyleChange = onOverlayStyleChange,
+                globalThresholds = globalThresholds,
+                onGlobalThresholdsChange = onGlobalThresholdsChange,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
@@ -260,6 +267,10 @@ fun MainScreen(
         HistoryDialog(
             appLabel = state.appLabel,
             historyFlow = onGetHistory(state.packageName),
+            globalThresholds = globalThresholds,
+            appThresholdsFlow = onGetAppThresholds(state.packageName),
+            onSaveThreshold = { w, a -> onSaveAppThreshold(state.packageName, w, a) },
+            onClearThreshold = { onClearAppThreshold(state.packageName) },
             onDismiss = { historyTarget = null },
         )
     }

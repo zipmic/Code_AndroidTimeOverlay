@@ -7,6 +7,9 @@ import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
+import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_MINUTES_MIN
+import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_WARN_MAX
+import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_ALERT_MAX
 import com.timeawareness.app.data.TimerDataStore.Companion.OVERLAY_SIZE_MAX
 import com.timeawareness.app.data.TimerDataStore.Companion.OVERLAY_SIZE_MIN
 import com.timeawareness.app.model.AppTimerState
@@ -87,6 +90,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun historyFor(pkg: String): Flow<Map<LocalDate, Long>> = dataStore.historyFlow(pkg)
+
+    val globalThresholds: StateFlow<Pair<Int, Int>> = dataStore.globalThresholdsFlow()
+        .stateIn(viewModelScope, SharingStarted.Eagerly,
+            TimerDataStore.WARN_MINUTES_DEFAULT to TimerDataStore.ALERT_MINUTES_DEFAULT)
+
+    fun setGlobalThresholds(warnMin: Int, alertMin: Int) {
+        val w = warnMin.coerceIn(THRESHOLD_MINUTES_MIN, THRESHOLD_WARN_MAX)
+        val a = alertMin.coerceIn(w + 1, THRESHOLD_ALERT_MAX)
+        viewModelScope.launch { dataStore.saveGlobalThresholds(w, a) }
+    }
+
+    fun appThresholdsFor(pkg: String): Flow<Pair<Int, Int>?> = dataStore.appThresholdsFlow(pkg)
+
+    fun setAppThreshold(pkg: String, warnMin: Int, alertMin: Int) {
+        val w = warnMin.coerceIn(THRESHOLD_MINUTES_MIN, THRESHOLD_WARN_MAX)
+        val a = alertMin.coerceIn(w + 1, THRESHOLD_ALERT_MAX)
+        viewModelScope.launch { dataStore.saveAppThreshold(pkg, w, a) }
+    }
+
+    fun clearAppThreshold(pkg: String) {
+        viewModelScope.launch { dataStore.clearAppThreshold(pkg) }
+    }
 
     fun refreshInstalledApps() {
         viewModelScope.launch {

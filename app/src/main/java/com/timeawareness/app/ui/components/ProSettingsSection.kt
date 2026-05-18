@@ -42,12 +42,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
+import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_ALERT_MAX
+import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_MINUTES_MIN
+import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_WARN_MAX
 import com.timeawareness.app.util.ColorUtil
 
 @Composable
 fun ProSettingsSection(
     style: OverlayStyle,
     onStyleChange: (OverlayStyle) -> Unit,
+    globalThresholds: Pair<Int, Int>,
+    onGlobalThresholdsChange: (warnMin: Int, alertMin: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -94,12 +99,46 @@ fun ProSettingsSection(
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     OverlayColorSection(style, onStyleChange)
                     HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                    GlobalThresholdsSection(globalThresholds, onGlobalThresholdsChange)
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
                     BlinkSection(style, onStyleChange)
                     HorizontalDivider(Modifier.padding(vertical = 12.dp))
                     RandomMoveSection(style, onStyleChange)
                 }
             }
         }
+    }
+}
+
+// ── Global thresholds ─────────────────────────────────────────────────────────
+
+@Composable
+private fun GlobalThresholdsSection(
+    thresholds: Pair<Int, Int>,
+    onChange: (warnMin: Int, alertMin: Int) -> Unit,
+) {
+    val (warnMin, alertMin) = thresholds
+    Text("Default Thresholds", style = MaterialTheme.typography.labelLarge)
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "Overlay turns amber / red after these durations (applies to all apps unless overridden).",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(8.dp))
+    SliderRow(label = "Warn after  ${warnMin}m") {
+        Slider(
+            value = warnMin.toFloat(),
+            onValueChange = { onChange(it.toInt(), alertMin.coerceAtLeast(it.toInt() + 1)) },
+            valueRange = THRESHOLD_MINUTES_MIN.toFloat()..THRESHOLD_WARN_MAX.toFloat(),
+        )
+    }
+    SliderRow(label = "Alert after  ${alertMin}m") {
+        Slider(
+            value = alertMin.toFloat(),
+            onValueChange = { onChange(warnMin, it.toInt()) },
+            valueRange = (warnMin + 1).toFloat()..THRESHOLD_ALERT_MAX.toFloat(),
+        )
     }
 }
 

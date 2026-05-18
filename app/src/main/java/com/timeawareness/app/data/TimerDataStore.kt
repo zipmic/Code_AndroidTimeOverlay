@@ -53,6 +53,10 @@ class TimerDataStore(private val context: Context) {
     private val overlayXKey            = intPreferencesKey("overlay_x")
     private val overlayYKey            = intPreferencesKey("overlay_y")
     private val overlaySizeKey         = intPreferencesKey("overlay_size")
+    private val globalWarnKey          = intPreferencesKey("global_warn_minutes")
+    private val globalAlertKey         = intPreferencesKey("global_alert_minutes")
+    private fun appThresholdKey(pkg: String) = stringPreferencesKey("threshold_$pkg")
+
     private val overlayHueKey          = floatPreferencesKey("overlay_hue")
     private val overlaySaturationKey   = floatPreferencesKey("overlay_saturation")
     private val overlayLightnessKey    = floatPreferencesKey("overlay_lightness")
@@ -74,6 +78,12 @@ class TimerDataStore(private val context: Context) {
         const val RANDOM_MOVE_INTERVAL_MIN    = 5
         const val RANDOM_MOVE_INTERVAL_MAX    = 300
         const val RANDOM_MOVE_INTERVAL_DEFAULT = 30
+
+        const val WARN_MINUTES_DEFAULT  = 30
+        const val ALERT_MINUTES_DEFAULT = 60
+        const val THRESHOLD_MINUTES_MIN = 5
+        const val THRESHOLD_WARN_MAX    = 120
+        const val THRESHOLD_ALERT_MAX   = 300
     }
 
     // ── Core flows ────────────────────────────────────────────────────────────
@@ -196,6 +206,54 @@ class TimerDataStore(private val context: Context) {
         context.dataStore.data.first()[monitoredAppsKey] ?: emptySet()
 
     suspend fun readAllElapsedToday(): Map<String, Long> = snapshotFlow().first().elapsedToday
+
+    // ── Thresholds ────────────────────────────────────────────────────────────
+
+    fun globalThresholdsFlow(): Flow<Pair<Int, Int>> =
+        context.dataStore.data
+            .map { prefs ->
+                (prefs[globalWarnKey] ?: WARN_MINUTES_DEFAULT) to
+                (prefs[globalAlertKey] ?: ALERT_MINUTES_DEFAULT)
+            }
+            .distinctUntilChanged()
+
+    /** Returns null when the app has no override (uses global). */
+    fun appThresholdsFlow(pkg: String): Flow<Pair<Int, Int>?> =
+        context.dataStore.data
+            .map { prefs -> parseThreshold(prefs[appThresholdKey(pkg)]) }
+            .distinctUntilChanged()
+
+    /** Returns the effective thresholds: per-app override if set, global otherwise. */
+    fun resolvedThresholdsFlow(pkg: String): Flow<Pair<Int, Int>> =
+        context.dataStore.data
+            .map { prefs ->
+                parseThreshold(prefs[appThresholdKey(pkg)])
+                    ?: ((prefs[globalWarnKey] ?: WARN_MINUTES_DEFAULT) to
+                        (prefs[globalAlertKey] ?: ALERT_MINUTES_DEFAULT))
+            }
+            .distinctUntilChanged()
+
+    suspend fun saveGlobalThresholds(warnMin: Int, alertMin: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[globalWarnKey]  = warnMin
+            prefs[globalAlertKey] = alertMin
+        }
+    }
+
+    suspend fun saveAppThreshold(pkg: String, warnMin: Int, alertMin: Int) {
+        context.dataStore.edit { prefs -> prefs[appThresholdKey(pkg)] = "$warnMin,$alertMin" }
+    }
+
+    suspend fun clearAppThreshold(pkg: String) {
+        context.dataStore.edit { prefs -> prefs.remove(appThresholdKey(pkg)) }
+    }
+
+    private fun parseThreshold(raw: String?): Pair<Int, Int>? {
+        if (raw.isNullOrBlank()) return null
+        val parts = raw.split(",")
+        if (parts.size != 2) return null
+        return runCatching { parts[0].toInt() to parts[1].toInt() }.getOrNull()
+    }
 
     // ── Usage history ─────────────────────────────────────────────────────────
 
