@@ -1,8 +1,7 @@
 package com.timeawareness.app.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
+import android.content.Intent
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import android.content.Intent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Search
@@ -138,154 +136,174 @@ fun MainScreen(
             )
         }
     ) { innerPadding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(innerPadding),
+            contentPadding = PaddingValues(bottom = 16.dp),
         ) {
             if (!hasUsageStatsPermission) {
-                PermissionBanner(
-                    message = "Usage access is required to detect which app is open.",
-                    buttonLabel = "Grant access",
-                    onClick = onRequestUsageStats,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                )
+                item {
+                    PermissionBanner(
+                        message = "Usage access is required to detect which app is open.",
+                        buttonLabel = "Grant access",
+                        onClick = onRequestUsageStats,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
             }
 
             if (!hasOverlayPermission) {
-                PermissionBanner(
-                    message = "Draw over other apps is required to show the timer overlay.",
-                    buttonLabel = "Grant access",
-                    onClick = onRequestOverlay,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                )
+                item {
+                    PermissionBanner(
+                        message = "Draw over other apps is required to show the timer overlay.",
+                        buttonLabel = "Grant access",
+                        onClick = onRequestOverlay,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
             }
 
             if (allPermissionsGranted && !isBatteryUnrestricted) {
-                PermissionBanner(
-                    message = "Allow Time Awareness to run in the background so the timer keeps working when the screen is off.",
-                    buttonLabel = "Improve reliability",
-                    onClick = onRequestBatteryExemption,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                )
+                item {
+                    PermissionBanner(
+                        message = "Allow Time Awareness to run in the background so the timer keeps working when the screen is off.",
+                        buttonLabel = "Improve reliability",
+                        onClick = onRequestBatteryExemption,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
             }
 
             // First-run hint: permissions granted but master still off → tell the user.
             if (allPermissionsGranted && !masterEnabled) {
-                Text(
-                    text = if (monitoredApps.isEmpty()) {
-                        "You're all set. Pick an app below, then flip the switch above to start tracking."
-                    } else {
-                        "Tracking is paused. Turn on the switch above to resume."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
+                item {
+                    Text(
+                        text = if (monitoredApps.isEmpty()) {
+                            "You're all set. Pick an app below, then flip the switch above to start tracking."
+                        } else {
+                            "Tracking is paused. Turn on the switch above to resume."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
             }
 
             // Daily total summary.
             if (monitoredApps.isNotEmpty()) {
-                Text(
-                    text = "Today: ${FormatUtil.formatHumanShort(totalSeconds)} across " +
-                        "${monitoredApps.size} app${if (monitoredApps.size == 1) "" else "s"}",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                item {
+                    Text(
+                        text = "Today: ${FormatUtil.formatHumanShort(totalSeconds)} across " +
+                            "${monitoredApps.size} app${if (monitoredApps.size == 1) "" else "s"}",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
+            }
+
+            item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Text(
+                        text = "Overlay size",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "${overlaySize}sp",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            item {
+                Slider(
+                    value = overlaySize.toFloat(),
+                    onValueChange = { onOverlaySizeChange(it.toInt()) },
+                    valueRange = TimerDataStore.OVERLAY_SIZE_MIN.toFloat()..TimerDataStore.OVERLAY_SIZE_MAX.toFloat(),
+                    steps = TimerDataStore.OVERLAY_SIZE_MAX - TimerDataStore.OVERLAY_SIZE_MIN - 1,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
                 )
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            ) {
-                Text(
-                    text = "Overlay size",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = "${overlaySize}sp",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
+            item {
+                ProSettingsSection(
+                    style = overlayStyle,
+                    onStyleChange = onOverlayStyleChange,
+                    globalThresholds = globalThresholds,
+                    onGlobalThresholdsChange = onGlobalThresholdsChange,
+                    dailySummaryEnabled    = dailySummaryEnabled,
+                    onDailySummaryToggle  = onDailySummaryToggle,
+                    activeSchedule        = activeSchedule,
+                    onActiveScheduleChange = onActiveScheduleChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
-            Slider(
-                value = overlaySize.toFloat(),
-                onValueChange = { onOverlaySizeChange(it.toInt()) },
-                valueRange = TimerDataStore.OVERLAY_SIZE_MIN.toFloat()..TimerDataStore.OVERLAY_SIZE_MAX.toFloat(),
-                steps = TimerDataStore.OVERLAY_SIZE_MAX - TimerDataStore.OVERLAY_SIZE_MIN - 1,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            )
 
-            ProSettingsSection(
-                style = overlayStyle,
-                onStyleChange = onOverlayStyleChange,
-                globalThresholds = globalThresholds,
-                onGlobalThresholdsChange = onGlobalThresholdsChange,
-                dailySummaryEnabled    = dailySummaryEnabled,
-                onDailySummaryToggle  = onDailySummaryToggle,
-                activeSchedule        = activeSchedule,
-                onActiveScheduleChange = onActiveScheduleChange,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("Search apps") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
-            )
+            item {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("Search apps") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
 
             when {
                 appStates.isEmpty() -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) { CircularProgressIndicator() }
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) { CircularProgressIndicator() }
+                    }
                 }
                 filteredApps.isEmpty() -> {
-                    Text(
-                        text = "No apps match \"$query\"",
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp)
-                    )
+                    item {
+                        Text(
+                            text = "No apps match \"$query\"",
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp)
+                        )
+                    }
                 }
                 else -> {
-                    LazyColumn(
-                        modifier = Modifier.alpha(if (masterEnabled) 1f else 0.5f),
-                        contentPadding = PaddingValues(vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(0.dp)
-                    ) {
-                        items(items = filteredApps, key = { it.packageName }) { state ->
-                            AppTimerRow(
-                                state = state,
-                                onToggle = { enabled -> onToggleMonitored(state.packageName, enabled) },
-                                onReset = {
-                                    resetTargetPkg = state.packageName
-                                    resetTargetLabel = state.appLabel
-                                },
-                                onShowHistory = { historyTarget = state },
-                            )
-                        }
+                    items(items = filteredApps, key = { it.packageName }) { state ->
+                        AppTimerRow(
+                            state = state,
+                            onToggle = { enabled -> onToggleMonitored(state.packageName, enabled) },
+                            onReset = {
+                                resetTargetPkg = state.packageName
+                                resetTargetLabel = state.appLabel
+                            },
+                            onShowHistory = { historyTarget = state },
+                            modifier = Modifier.alpha(if (masterEnabled) 1f else 0.5f),
+                        )
                     }
                 }
             }
