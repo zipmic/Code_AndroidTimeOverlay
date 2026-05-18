@@ -24,6 +24,7 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.timeawareness.app.R
+import com.timeawareness.app.data.OverlayContent
 import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.ui.MainActivity
@@ -78,7 +79,9 @@ class TrackingService : LifecycleService() {
     private var overlayTimerText: TextView? = null
 
     private val elapsedSeconds  = mutableMapOf<String, Long>()
+    private val sessionCounts   = mutableMapOf<String, Int>()
     private val dirtyPackages   = mutableSetOf<String>()
+    private val dirtySessionPkgs = mutableSetOf<String>()
     private var ticksSincePersist = 0
 
     private var monitoredApps        = setOf<String>()
@@ -205,8 +208,12 @@ class TrackingService : LifecycleService() {
                 monitoredApps = apps
                 val newPackages = apps.filter { it !in elapsedSeconds }
                 if (newPackages.isNotEmpty()) {
-                    val snapshot = dataStore.readAllElapsedToday()
-                    newPackages.forEach { pkg -> elapsedSeconds[pkg] = snapshot[pkg] ?: 0L }
+                    val snapshot        = dataStore.readAllElapsedToday()
+                    val sessionSnapshot = dataStore.readAllSessionsToday()
+                    newPackages.forEach { pkg ->
+                        elapsedSeconds[pkg] = snapshot[pkg] ?: 0L
+                        sessionCounts[pkg]  = sessionSnapshot[pkg] ?: 0
+                    }
                 }
                 val fg = currentForegroundPkg
                 if (overlayView != null && (fg == null || fg !in apps)) removeOverlay()
@@ -289,6 +296,9 @@ class TrackingService : LifecycleService() {
             if (foreground in monitoredApps) {
                 showOverlay(elapsedSeconds[foreground] ?: 0L)
                 startThresholdObserver(foreground)
+                val newCount = (sessionCounts[foreground] ?: 0) + 1
+                sessionCounts[foreground] = newCount
+                dirtySessionPkgs += foreground
             }
             updateNotification()
         }
@@ -321,15 +331,24 @@ class TrackingService : LifecycleService() {
     }
 
     private suspend fun flushDirty() {
-        if (dirtyPackages.isEmpty()) return
-        val snapshot = dirtyPackages.toList()
-        dirtyPackages.clear()
+        if (dirtyPackages.isEmpty() && dirtySessionPkgs.isEmpty()) return
         val today = LocalDate.now()
-        snapshot.forEach { pkg ->
-            val seconds = elapsedSeconds[pkg] ?: 0L
-            dataStore.saveElapsedSeconds(pkg, seconds)
-            // Keep today's history entry current so the chart reflects live progress.
-            dataStore.saveHistoryEntry(pkg, today, seconds)
+        if (dirtyPackages.isNotEmpty()) {
+            val snapshot = dirtyPackages.toList()
+            dirtyPackages.clear()
+            snapshot.forEach { pkg ->
+                val seconds = elapsedSeconds[pkg] ?: 0L
+                dataStore.saveElapsedSeconds(pkg, seconds)
+                // Keep today's history entry current so the chart reflects live progress.
+                dataStore.saveHistoryEntry(pkg, today, seconds)
+            }
+        }
+        if (dirtySessionPkgs.isNotEmpty()) {
+            val sessionSnapshot = dirtySessionPkgs.toList()
+            dirtySessionPkgs.clear()
+            sessionSnapshot.forEach { pkg ->
+                dataStore.saveSessionCount(pkg, today, sessionCounts[pkg] ?: 0)
+            }
         }
     }
 
@@ -342,7 +361,9 @@ class TrackingService : LifecycleService() {
             }
             currentDate = today
             elapsedSeconds.clear()
+            sessionCounts.clear()
             dirtyPackages.clear()
+            dirtySessionPkgs.clear()
             ticksSincePersist  = 0
             displayBaseSeconds = 0L
             displayBaseTimeMs  = System.currentTimeMillis()
@@ -504,7 +525,13 @@ class TrackingService : LifecycleService() {
     }
 
     private fun updateOverlay(seconds: Long) {
-        overlayTimerText?.text = FormatUtil.formatSeconds(seconds)
+        val text = when (cachedOverlayStyle.overlayContent) {
+            OverlayContent.ELAPSED_TIME  -> FormatUtil.formatSeconds(seconds)
+            OverlayContent.CLOCK         -> FormatUtil.formatClock()
+            OverlayContent.SESSION_COUNT -> "×${sessionCounts[currentForegroundPkg] ?: 0}"
+            OverlayContent.CUSTOM_LABEL  -> cachedOverlayStyle.customLabel.ifBlank { "▶" }
+        }
+        overlayTimerText?.text = text
         val bg = overlayView?.background
         if (bg is GradientDrawable) bg.setColor(colorForElapsed(seconds))
     }

@@ -52,9 +52,12 @@ fun AppTimerRow(
                 )
                 if (state.isMonitored) {
                     Text(
-                        text = "Today: ${FormatUtil.formatSeconds(state.elapsedSeconds)}",
+                        text = buildString {
+                            append("Today: ${FormatUtil.formatSeconds(state.elapsedSeconds)}")
+                            if (state.sessionCount > 0) append("  ×${state.sessionCount}")
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }

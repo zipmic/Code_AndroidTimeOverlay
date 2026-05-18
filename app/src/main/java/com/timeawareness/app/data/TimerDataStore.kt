@@ -23,7 +23,10 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 data class TimerSnapshot(
     val monitoredApps: Set<String>,
     val elapsedToday: Map<String, Long>,
+    val sessionsToday: Map<String, Int>,
 )
+
+enum class OverlayContent { ELAPSED_TIME, CLOCK, SESSION_COUNT, CUSTOM_LABEL }
 
 /**
  * All pro overlay settings in one place.
@@ -40,6 +43,8 @@ data class OverlayStyle(
     val blinkIntervalSeconds: Int = 30,
     val randomMoveEnabled: Boolean = false,
     val randomMoveIntervalSeconds: Int = 30,
+    val overlayContent: OverlayContent = OverlayContent.ELAPSED_TIME,
+    val customLabel: String = "",
 )
 
 class TimerDataStore(private val context: Context) {
@@ -65,6 +70,9 @@ class TimerDataStore(private val context: Context) {
     private val blinkIntervalKey       = intPreferencesKey("blink_interval_seconds")
     private val randomMoveEnabledKey   = booleanPreferencesKey("random_move_enabled")
     private val randomMoveIntervalKey  = intPreferencesKey("random_move_interval_seconds")
+    private val overlayContentKey      = stringPreferencesKey("overlay_content")
+    private val customLabelKey         = stringPreferencesKey("overlay_custom_label")
+    private fun sessionKey(pkg: String) = stringPreferencesKey("session_$pkg")
 
     companion object {
         const val OVERLAY_SIZE_DEFAULT = 14
@@ -109,7 +117,10 @@ class TimerDataStore(private val context: Context) {
                 val elapsed = monitored.associateWith { pkg ->
                     if ((prefs[dateKey(pkg)] ?: "") == today) prefs[elapsedKey(pkg)] ?: 0L else 0L
                 }
-                TimerSnapshot(monitored, elapsed)
+                val sessions = monitored.associateWith { pkg ->
+                    parseSessionCount(prefs[sessionKey(pkg)], today)
+                }
+                TimerSnapshot(monitored, elapsed, sessions)
             }
             .distinctUntilChanged()
 
@@ -138,6 +149,10 @@ class TimerDataStore(private val context: Context) {
                     blinkIntervalSeconds   = prefs[blinkIntervalKey]     ?: BLINK_INTERVAL_DEFAULT,
                     randomMoveEnabled      = prefs[randomMoveEnabledKey] ?: false,
                     randomMoveIntervalSeconds = prefs[randomMoveIntervalKey] ?: RANDOM_MOVE_INTERVAL_DEFAULT,
+                    overlayContent         = prefs[overlayContentKey]?.let {
+                        runCatching { OverlayContent.valueOf(it) }.getOrDefault(OverlayContent.ELAPSED_TIME)
+                    } ?: OverlayContent.ELAPSED_TIME,
+                    customLabel            = prefs[customLabelKey]       ?: "",
                 )
             }
             .distinctUntilChanged()
@@ -152,6 +167,8 @@ class TimerDataStore(private val context: Context) {
             prefs[blinkIntervalKey]     = style.blinkIntervalSeconds
             prefs[randomMoveEnabledKey] = style.randomMoveEnabled
             prefs[randomMoveIntervalKey] = style.randomMoveIntervalSeconds
+            prefs[overlayContentKey]    = style.overlayContent.name
+            prefs[customLabelKey]       = style.customLabel
         }
     }
 
@@ -275,6 +292,26 @@ class TimerDataStore(private val context: Context) {
         context.dataStore.data
             .map { prefs -> parseHistory(prefs[historyKey(pkg)] ?: "") }
             .distinctUntilChanged()
+
+    // ── Session counts ────────────────────────────────────────────────────────
+
+    private fun parseSessionCount(raw: String?, today: String): Int {
+        if (raw.isNullOrBlank()) return 0
+        val parts = raw.split("=")
+        if (parts.size != 2 || parts[0] != today) return 0
+        return parts[1].toIntOrNull() ?: 0
+    }
+
+    suspend fun saveSessionCount(pkg: String, date: LocalDate, count: Int) {
+        context.dataStore.edit { prefs -> prefs[sessionKey(pkg)] = "$date=$count" }
+    }
+
+    suspend fun readAllSessionsToday(): Map<String, Int> {
+        val prefs   = context.dataStore.data.first()
+        val today   = LocalDate.now().toString()
+        val monitored = prefs[monitoredAppsKey] ?: emptySet()
+        return monitored.associateWith { pkg -> parseSessionCount(prefs[sessionKey(pkg)], today) }
+    }
 
     suspend fun saveHistoryEntry(pkg: String, date: LocalDate, seconds: Long) {
         context.dataStore.edit { prefs ->

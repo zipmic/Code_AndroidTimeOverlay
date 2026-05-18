@@ -53,6 +53,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     appLabel       = label,
                     isMonitored    = pkg in snapshot.monitoredApps,
                     elapsedSeconds = snapshot.elapsedToday[pkg] ?: 0L,
+                    sessionCount   = snapshot.sessionsToday[pkg] ?: 0,
                 )
             }
             .sortedWith(

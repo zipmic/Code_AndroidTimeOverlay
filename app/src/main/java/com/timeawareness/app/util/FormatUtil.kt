@@ -11,6 +11,11 @@ object FormatUtil {
         else String.format(Locale.ROOT, "%02d:%02d", m, s)
     }
 
+    fun formatClock(): String {
+        val t = java.time.LocalTime.now()
+        return String.format(Locale.ROOT, "%d:%02d", t.hour, t.minute)
+    }
+
     /** Compact "2h 15m" / "15m" / "45s" representation for headers and notifications. */
     fun formatHumanShort(totalSeconds: Long): String {
         val h = totalSeconds / 3600

@@ -5,4 +5,5 @@ data class AppTimerState(
     val appLabel: String,
     val isMonitored: Boolean,
     val elapsedSeconds: Long,
+    val sessionCount: Int = 0,
 )

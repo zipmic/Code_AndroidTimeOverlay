@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,15 +15,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -40,6 +45,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.timeawareness.app.data.OverlayContent
 import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_ALERT_MAX
@@ -97,6 +103,10 @@ fun ProSettingsSection(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    StylePresetsSection(style, onStyleChange)
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                    OverlayContentSection(style, onStyleChange)
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
                     OverlayColorSection(style, onStyleChange)
                     HorizontalDivider(Modifier.padding(vertical = 12.dp))
                     GlobalThresholdsSection(globalThresholds, onGlobalThresholdsChange)
@@ -106,6 +116,87 @@ fun ProSettingsSection(
                     RandomMoveSection(style, onStyleChange)
                 }
             }
+        }
+    }
+}
+
+// ── Style presets ─────────────────────────────────────────────────────────────
+
+private data class StylePreset(
+    val name: String,
+    val hue: Float, val saturation: Float, val lightness: Float, val alpha: Int,
+)
+
+private val STYLE_PRESETS = listOf(
+    StylePreset("Default", 0f,   0f,   0f,    204),
+    StylePreset("Amber",   38f,  0.9f, 0.35f, 230),
+    StylePreset("Cyan",    195f, 0.8f, 0.35f, 230),
+    StylePreset("Green",   145f, 0.7f, 0.3f,  230),
+    StylePreset("Night",   0f,   0f,   0.05f, 160),
+)
+
+@Composable
+private fun StylePresetsSection(style: OverlayStyle, onStyleChange: (OverlayStyle) -> Unit) {
+    Text("Quick Presets", style = MaterialTheme.typography.labelLarge)
+    Spacer(Modifier.height(8.dp))
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+    ) {
+        STYLE_PRESETS.forEach { preset ->
+            val isSelected = style.hue == preset.hue &&
+                             style.saturation == preset.saturation &&
+                             style.lightness == preset.lightness &&
+                             style.alpha == preset.alpha
+            FilterChip(
+                selected = isSelected,
+                onClick  = {
+                    onStyleChange(style.copy(
+                        hue        = preset.hue,
+                        saturation = preset.saturation,
+                        lightness  = preset.lightness,
+                        alpha      = preset.alpha,
+                    ))
+                },
+                label = { Text(preset.name) },
+            )
+        }
+    }
+}
+
+// ── Overlay content ───────────────────────────────────────────────────────────
+
+@Composable
+private fun OverlayContentSection(style: OverlayStyle, onStyleChange: (OverlayStyle) -> Unit) {
+    Text("Display", style = MaterialTheme.typography.labelLarge)
+    Spacer(Modifier.height(8.dp))
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+    ) {
+        listOf(
+            OverlayContent.ELAPSED_TIME  to "Time",
+            OverlayContent.CLOCK         to "Clock",
+            OverlayContent.SESSION_COUNT to "Sessions",
+            OverlayContent.CUSTOM_LABEL  to "Label",
+        ).forEach { (content, label) ->
+            FilterChip(
+                selected = style.overlayContent == content,
+                onClick  = { onStyleChange(style.copy(overlayContent = content)) },
+                label    = { Text(label) },
+            )
+        }
+    }
+    AnimatedVisibility(visible = style.overlayContent == OverlayContent.CUSTOM_LABEL) {
+        Column {
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value         = style.customLabel,
+                onValueChange = { onStyleChange(style.copy(customLabel = it)) },
+                label         = { Text("Custom text") },
+                singleLine    = true,
+                modifier      = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
