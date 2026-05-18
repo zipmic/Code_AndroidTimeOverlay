@@ -29,6 +29,21 @@ data class TimerSnapshot(
 enum class OverlayContent { ELAPSED_TIME, CLOCK, SESSION_COUNT, CUSTOM_LABEL }
 
 /**
+ * Controls when the overlay is shown.
+ * All bits in [activeDays] set = every day (default); individual bits = Mon(0)…Sun(6).
+ */
+data class ActiveSchedule(
+    val activeHoursEnabled: Boolean = false,
+    val activeHoursStartHour: Int   = 8,
+    val activeHoursEndHour: Int     = 22,
+    val activeDays: Int             = ALL_DAYS,
+) {
+    companion object {
+        const val ALL_DAYS = 0b1111111
+    }
+}
+
+/**
  * All pro overlay settings in one place.
  * Defaults match the existing visual appearance so existing installs look unchanged.
  */
@@ -61,7 +76,11 @@ class TimerDataStore(private val context: Context) {
     private val globalWarnKey          = intPreferencesKey("global_warn_minutes")
     private val globalAlertKey         = intPreferencesKey("global_alert_minutes")
     private fun appThresholdKey(pkg: String) = stringPreferencesKey("threshold_$pkg")
-    private val dailySummaryEnabledKey = booleanPreferencesKey("daily_summary_enabled")
+    private val dailySummaryEnabledKey  = booleanPreferencesKey("daily_summary_enabled")
+    private val activeHoursEnabledKey   = booleanPreferencesKey("active_hours_enabled")
+    private val activeHoursStartKey     = intPreferencesKey("active_hours_start_hour")
+    private val activeHoursEndKey       = intPreferencesKey("active_hours_end_hour")
+    private val activeDaysKey           = intPreferencesKey("active_days_mask")
 
     private val overlayHueKey          = floatPreferencesKey("overlay_hue")
     private val overlaySaturationKey   = floatPreferencesKey("overlay_saturation")
@@ -273,6 +292,31 @@ class TimerDataStore(private val context: Context) {
 
     suspend fun setDailySummaryEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs -> prefs[dailySummaryEnabledKey] = enabled }
+    }
+
+    // ── Active schedule ───────────────────────────────────────────────────────
+
+    fun activeScheduleFlow(): Flow<ActiveSchedule> =
+        context.dataStore.data
+            .map { prefs ->
+                ActiveSchedule(
+                    activeHoursEnabled   = prefs[activeHoursEnabledKey] ?: false,
+                    activeHoursStartHour = prefs[activeHoursStartKey]   ?: 8,
+                    activeHoursEndHour   = prefs[activeHoursEndKey]     ?: 22,
+                    activeDays           = prefs[activeDaysKey]          ?: ActiveSchedule.ALL_DAYS,
+                )
+            }
+            .distinctUntilChanged()
+
+    suspend fun saveActiveSchedule(schedule: ActiveSchedule) {
+        val start = schedule.activeHoursStartHour.coerceIn(0, 22)
+        val end   = schedule.activeHoursEndHour.coerceIn(start + 1, 23)
+        context.dataStore.edit { prefs ->
+            prefs[activeHoursEnabledKey] = schedule.activeHoursEnabled
+            prefs[activeHoursStartKey]   = start
+            prefs[activeHoursEndKey]     = end
+            prefs[activeDaysKey]         = schedule.activeDays
+        }
     }
 
     private fun parseThreshold(raw: String?): Pair<Int, Int>? {

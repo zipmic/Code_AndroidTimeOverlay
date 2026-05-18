@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.timeawareness.app.data.ActiveSchedule
 import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.model.AppTimerState
@@ -74,6 +75,8 @@ fun MainScreen(
     onClearAppThreshold: (pkg: String) -> Unit,
     dailySummaryEnabled: Boolean,
     onDailySummaryToggle: (Boolean) -> Unit,
+    activeSchedule: ActiveSchedule,
+    onActiveScheduleChange: (ActiveSchedule) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var resetTargetPkg by remember { mutableStateOf<String?>(null) }
@@ -201,8 +204,10 @@ fun MainScreen(
                 onStyleChange = onOverlayStyleChange,
                 globalThresholds = globalThresholds,
                 onGlobalThresholdsChange = onGlobalThresholdsChange,
-                dailySummaryEnabled = dailySummaryEnabled,
-                onDailySummaryToggle = onDailySummaryToggle,
+                dailySummaryEnabled    = dailySummaryEnabled,
+                onDailySummaryToggle  = onDailySummaryToggle,
+                activeSchedule        = activeSchedule,
+                onActiveScheduleChange = onActiveScheduleChange,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),

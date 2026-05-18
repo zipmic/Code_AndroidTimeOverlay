@@ -3,6 +3,7 @@ package com.timeawareness.app.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.timeawareness.app.data.ActiveSchedule
 import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
 import kotlinx.coroutines.flow.Flow
@@ -119,6 +120,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setDailySummaryEnabled(enabled: Boolean) {
         viewModelScope.launch { dataStore.setDailySummaryEnabled(enabled) }
+    }
+
+    val activeSchedule: StateFlow<ActiveSchedule> = dataStore.activeScheduleFlow()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ActiveSchedule())
+
+    fun setActiveSchedule(schedule: ActiveSchedule) {
+        viewModelScope.launch { dataStore.saveActiveSchedule(schedule) }
     }
 
     fun refreshInstalledApps() {

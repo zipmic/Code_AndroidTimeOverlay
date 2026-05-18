@@ -45,6 +45,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.timeawareness.app.data.ActiveSchedule
 import com.timeawareness.app.data.OverlayContent
 import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
@@ -61,6 +62,8 @@ fun ProSettingsSection(
     onGlobalThresholdsChange: (warnMin: Int, alertMin: Int) -> Unit,
     dailySummaryEnabled: Boolean,
     onDailySummaryToggle: (Boolean) -> Unit,
+    activeSchedule: ActiveSchedule,
+    onActiveScheduleChange: (ActiveSchedule) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -118,6 +121,8 @@ fun ProSettingsSection(
                     RandomMoveSection(style, onStyleChange)
                     HorizontalDivider(Modifier.padding(vertical = 12.dp))
                     DailySummarySection(dailySummaryEnabled, onDailySummaryToggle)
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                    ActiveScheduleSection(activeSchedule, onActiveScheduleChange)
                 }
             }
         }
@@ -373,6 +378,88 @@ private fun DailySummarySection(enabled: Boolean, onToggle: (Boolean) -> Unit) {
     AnimatedVisibility(visible = enabled) {
         Text(
             "Sends a notification with yesterday's usage totals at midnight.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+// ── Active schedule ───────────────────────────────────────────────────────────
+
+@Composable
+private fun ActiveScheduleSection(
+    schedule: ActiveSchedule,
+    onScheduleChange: (ActiveSchedule) -> Unit,
+) {
+    val dayLabels = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
+
+    Text("Active Schedule", style = MaterialTheme.typography.labelLarge)
+    Spacer(Modifier.height(8.dp))
+
+    // Day-of-week chips
+    Text(
+        "Active days",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(4.dp))
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+    ) {
+        dayLabels.forEachIndexed { i, label ->
+            val on = (schedule.activeDays shr i) and 1 == 1
+            FilterChip(
+                selected = on,
+                onClick  = {
+                    val newMask = if (on) schedule.activeDays and (1 shl i).inv()
+                                 else     schedule.activeDays or  (1 shl i)
+                    onScheduleChange(schedule.copy(activeDays = newMask))
+                },
+                label = { Text(label) },
+            )
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    // Hours range
+    ToggleRow(
+        label           = "Restrict hours",
+        checked         = schedule.activeHoursEnabled,
+        onCheckedChange = { onScheduleChange(schedule.copy(activeHoursEnabled = it)) },
+    )
+    AnimatedVisibility(visible = schedule.activeHoursEnabled) {
+        Column {
+            Spacer(Modifier.height(4.dp))
+            SliderRow(label = "From  ${schedule.activeHoursStartHour}:00") {
+                Slider(
+                    value         = schedule.activeHoursStartHour.toFloat(),
+                    onValueChange = {
+                        val h = it.toInt()
+                        onScheduleChange(schedule.copy(
+                            activeHoursStartHour = h,
+                            activeHoursEndHour   = schedule.activeHoursEndHour.coerceAtLeast(h + 1),
+                        ))
+                    },
+                    valueRange = 0f..22f,
+                    steps      = 21,
+                )
+            }
+            SliderRow(label = "Until  ${schedule.activeHoursEndHour}:00") {
+                Slider(
+                    value         = schedule.activeHoursEndHour.toFloat(),
+                    onValueChange = { onScheduleChange(schedule.copy(activeHoursEndHour = it.toInt())) },
+                    valueRange    = (schedule.activeHoursStartHour + 1).toFloat()..23f,
+                    steps         = (21 - schedule.activeHoursStartHour).coerceAtLeast(0),
+                )
+            }
+        }
+    }
+    AnimatedVisibility(visible = !schedule.activeHoursEnabled) {
+        Text(
+            "Overlay shows at any hour.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),

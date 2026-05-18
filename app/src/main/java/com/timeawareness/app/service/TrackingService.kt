@@ -24,8 +24,10 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.timeawareness.app.R
+import com.timeawareness.app.data.ActiveSchedule
 import com.timeawareness.app.data.OverlayContent
 import com.timeawareness.app.data.OverlayStyle
+import java.time.LocalTime
 import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.ui.MainActivity
 import com.timeawareness.app.util.ColorUtil
@@ -98,6 +100,7 @@ class TrackingService : LifecycleService() {
     private var cachedOverlayTextSp        = TimerDataStore.OVERLAY_SIZE_DEFAULT
     private var cachedOverlayStyle         = OverlayStyle()
     private var cachedDailySummaryEnabled  = false
+    private var cachedActiveSchedule       = ActiveSchedule()
 
     // Per-app thresholds: updated reactively when the foreground app changes.
     private var currentWarnSeconds  = TimerDataStore.WARN_MINUTES_DEFAULT  * 60L
@@ -141,6 +144,7 @@ class TrackingService : LifecycleService() {
         observeOverlaySize()
         observeOverlayStyle()
         observeDailySummaryEnabled()
+        observeActiveSchedule()
         startTickLoop()
     }
 
@@ -276,6 +280,16 @@ class TrackingService : LifecycleService() {
         }
     }
 
+    private fun observeActiveSchedule() {
+        lifecycleScope.launch {
+            dataStore.activeScheduleFlow().collect { schedule ->
+                cachedActiveSchedule = schedule
+                // Recheck overlay visibility immediately if a monitored app is in the foreground.
+                ensureOverlayState()
+            }
+        }
+    }
+
     // ── Main tick loop ────────────────────────────────────────────────────────
 
     private fun startTickLoop() {
@@ -307,15 +321,16 @@ class TrackingService : LifecycleService() {
         if (foreground != currentForegroundPkg) {
             if (currentForegroundPkg in monitoredApps) removeOverlay()
             currentForegroundPkg = foreground
-            if (foreground in monitoredApps) {
-                showOverlay(elapsedSeconds[foreground] ?: 0L)
-                startThresholdObserver(foreground)
+            if (foreground != null && foreground in monitoredApps) {
                 val newCount = (sessionCounts[foreground] ?: 0) + 1
                 sessionCounts[foreground] = newCount
                 dirtySessionPkgs += foreground
             }
             updateNotification()
         }
+
+        // Reconcile overlay with current schedule — runs every tick to catch hour/day transitions.
+        ensureOverlayState()
 
         val pkg = currentForegroundPkg ?: return
         if (pkg !in monitoredApps) return
@@ -332,6 +347,30 @@ class TrackingService : LifecycleService() {
             flushDirty()
             ticksSincePersist = 0
             updateNotification()
+        }
+    }
+
+    private fun isActiveNow(): Boolean {
+        val s = cachedActiveSchedule
+        val dayBit = LocalDate.now().dayOfWeek.value - 1  // 0=Mon … 6=Sun
+        if ((s.activeDays shr dayBit) and 1 == 0) return false
+        if (!s.activeHoursEnabled) return true
+        val nowHour = LocalTime.now().hour
+        return nowHour in s.activeHoursStartHour..s.activeHoursEndHour
+    }
+
+    private fun ensureOverlayState() {
+        val pkg = currentForegroundPkg
+        if (pkg == null || pkg !in monitoredApps) {
+            if (overlayView != null) removeOverlay()
+            return
+        }
+        val shouldShow = isActiveNow()
+        if (shouldShow && overlayView == null) {
+            showOverlay(elapsedSeconds[pkg] ?: 0L)
+            startThresholdObserver(pkg)
+        } else if (!shouldShow && overlayView != null) {
+            removeOverlay()
         }
     }
 
