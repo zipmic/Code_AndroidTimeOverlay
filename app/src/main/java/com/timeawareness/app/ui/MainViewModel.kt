@@ -114,6 +114,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { dataStore.clearAppThreshold(pkg) }
     }
 
+    val dailySummaryEnabled: StateFlow<Boolean> = dataStore.dailySummaryEnabledFlow()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    fun setDailySummaryEnabled(enabled: Boolean) {
+        viewModelScope.launch { dataStore.setDailySummaryEnabled(enabled) }
+    }
+
     fun refreshInstalledApps() {
         viewModelScope.launch {
             _installedApps.value = withContext(Dispatchers.IO) {

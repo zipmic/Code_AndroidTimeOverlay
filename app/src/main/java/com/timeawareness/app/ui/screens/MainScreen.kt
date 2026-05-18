@@ -11,11 +11,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -41,6 +43,7 @@ import com.timeawareness.app.ui.components.AppTimerRow
 import com.timeawareness.app.ui.components.HistoryDialog
 import com.timeawareness.app.ui.components.PermissionBanner
 import com.timeawareness.app.ui.components.ProSettingsSection
+import com.timeawareness.app.ui.components.WeeklyReportDialog
 import com.timeawareness.app.util.FormatUtil
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
@@ -69,11 +72,14 @@ fun MainScreen(
     onGetAppThresholds: (String) -> Flow<Pair<Int, Int>?>,
     onSaveAppThreshold: (pkg: String, warnMin: Int, alertMin: Int) -> Unit,
     onClearAppThreshold: (pkg: String) -> Unit,
+    dailySummaryEnabled: Boolean,
+    onDailySummaryToggle: (Boolean) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var resetTargetPkg by remember { mutableStateOf<String?>(null) }
     var resetTargetLabel by remember { mutableStateOf("") }
     var historyTarget by remember { mutableStateOf<AppTimerState?>(null) }
+    var showWeeklyReport by remember { mutableStateOf(false) }
 
     val monitoredApps = appStates.filter { it.isMonitored }
     val totalSeconds = monitoredApps.sumOf { it.elapsedSeconds }
@@ -87,6 +93,11 @@ fun MainScreen(
             TopAppBar(
                 title = { Text("Time Awareness") },
                 actions = {
+                    if (monitoredApps.isNotEmpty()) {
+                        IconButton(onClick = { showWeeklyReport = true }) {
+                            Icon(Icons.Default.DateRange, contentDescription = "Weekly report")
+                        }
+                    }
                     Switch(
                         checked = masterEnabled,
                         onCheckedChange = onMasterToggle,
@@ -190,6 +201,8 @@ fun MainScreen(
                 onStyleChange = onOverlayStyleChange,
                 globalThresholds = globalThresholds,
                 onGlobalThresholdsChange = onGlobalThresholdsChange,
+                dailySummaryEnabled = dailySummaryEnabled,
+                onDailySummaryToggle = onDailySummaryToggle,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
@@ -260,6 +273,14 @@ fun MainScreen(
             dismissButton = {
                 TextButton(onClick = { resetTargetPkg = null }) { Text("Cancel") }
             }
+        )
+    }
+
+    if (showWeeklyReport) {
+        WeeklyReportDialog(
+            monitoredApps = monitoredApps,
+            onGetHistory  = onGetHistory,
+            onDismiss     = { showWeeklyReport = false },
         )
     }
 

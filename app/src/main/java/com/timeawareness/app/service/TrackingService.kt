@@ -50,8 +50,10 @@ class TrackingService : LifecycleService() {
 
     companion object {
         private const val TAG = "TrackingService"
-        private const val CHANNEL_ID = "tracking_service"
-        private const val NOTIFICATION_ID = 1
+        private const val CHANNEL_ID         = "tracking_service"
+        private const val SUMMARY_CHANNEL_ID  = "daily_summary"
+        private const val NOTIFICATION_ID     = 1
+        private const val SUMMARY_NOTIFICATION_ID = 2
         private const val TICK_INTERVAL_MS = 2_000L
         private const val PERSIST_INTERVAL_TICKS = 3   // every 6 s with 2 s tick
         private const val PERMISSION_RECHECK_MS = 30_000L
@@ -93,8 +95,9 @@ class TrackingService : LifecycleService() {
     private var cachedHasUsagePermission = false
     private var lastPermissionCheckMs    = 0L
 
-    private var cachedOverlayTextSp = TimerDataStore.OVERLAY_SIZE_DEFAULT
-    private var cachedOverlayStyle  = OverlayStyle()
+    private var cachedOverlayTextSp        = TimerDataStore.OVERLAY_SIZE_DEFAULT
+    private var cachedOverlayStyle         = OverlayStyle()
+    private var cachedDailySummaryEnabled  = false
 
     // Per-app thresholds: updated reactively when the foreground app changes.
     private var currentWarnSeconds  = TimerDataStore.WARN_MINUTES_DEFAULT  * 60L
@@ -137,6 +140,7 @@ class TrackingService : LifecycleService() {
         lifecycleScope.launch { cachedOverlayPosition = dataStore.readOverlayPosition() }
         observeOverlaySize()
         observeOverlayStyle()
+        observeDailySummaryEnabled()
         startTickLoop()
     }
 
@@ -160,10 +164,12 @@ class TrackingService : LifecycleService() {
     // ── Notification ──────────────────────────────────────────────────────────
 
     private fun startForegroundWithNotification() {
-        val channel = NotificationChannel(
-            CHANNEL_ID, "App Timer", NotificationManager.IMPORTANCE_LOW
-        ).apply { description = "Tracks time spent in selected apps" }
-        notificationManager.createNotificationChannel(channel)
+        notificationManager.createNotificationChannels(listOf(
+            NotificationChannel(CHANNEL_ID, "App Timer", NotificationManager.IMPORTANCE_LOW)
+                .apply { description = "Tracks time spent in selected apps" },
+            NotificationChannel(SUMMARY_CHANNEL_ID, "Daily Summary", NotificationManager.IMPORTANCE_DEFAULT)
+                .apply { description = "End-of-day usage summary" },
+        ))
 
         val notification = buildNotification("Monitoring active")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -262,6 +268,14 @@ class TrackingService : LifecycleService() {
         }
     }
 
+    private fun observeDailySummaryEnabled() {
+        lifecycleScope.launch {
+            dataStore.dailySummaryEnabledFlow().collect { enabled ->
+                cachedDailySummaryEnabled = enabled
+            }
+        }
+    }
+
     // ── Main tick loop ────────────────────────────────────────────────────────
 
     private fun startTickLoop() {
@@ -355,10 +369,13 @@ class TrackingService : LifecycleService() {
     private suspend fun handleMidnightRollover() {
         val today = LocalDate.now()
         if (today != currentDate) {
+            val yesterday         = currentDate
+            val yesterdayElapsed  = elapsedSeconds.toMap()
             // Persist yesterday's final totals before clearing the in-memory map.
-            elapsedSeconds.forEach { (pkg, seconds) ->
-                if (seconds > 0) dataStore.saveHistoryEntry(pkg, currentDate, seconds)
+            yesterdayElapsed.forEach { (pkg, seconds) ->
+                if (seconds > 0) dataStore.saveHistoryEntry(pkg, yesterday, seconds)
             }
+            sendDailySummary(yesterdayElapsed)
             currentDate = today
             elapsedSeconds.clear()
             sessionCounts.clear()
@@ -369,6 +386,28 @@ class TrackingService : LifecycleService() {
             displayBaseTimeMs  = System.currentTimeMillis()
             updateNotification()
         }
+    }
+
+    private fun sendDailySummary(elapsed: Map<String, Long>) {
+        if (!cachedDailySummaryEnabled) return
+        val sorted = elapsed.entries.filter { it.value > 0 }.sortedByDescending { it.value }
+        if (sorted.isEmpty()) return
+        val total = sorted.sumOf { it.value }
+        val inboxStyle = NotificationCompat.InboxStyle()
+            .setBigContentTitle("Yesterday's Summary")
+        sorted.take(5).forEach { (pkg, seconds) ->
+            inboxStyle.addLine("${labelFor(pkg)} — ${FormatUtil.formatHumanShort(seconds)}")
+        }
+        if (sorted.size > 5) inboxStyle.setSummaryText("+${sorted.size - 5} more")
+        val notification = NotificationCompat.Builder(this, SUMMARY_CHANNEL_ID)
+            .setContentTitle("Yesterday: ${FormatUtil.formatHumanShort(total)}")
+            .setContentText("Across ${sorted.size} app${if (sorted.size == 1) "" else "s"}")
+            .setSmallIcon(R.drawable.ic_timer)
+            .setStyle(inboxStyle)
+            .setContentIntent(openAppPendingIntent)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(SUMMARY_NOTIFICATION_ID, notification)
     }
 
     // ── Overlay color ─────────────────────────────────────────────────────────

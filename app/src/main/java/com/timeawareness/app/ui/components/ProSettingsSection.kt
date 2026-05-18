@@ -59,6 +59,8 @@ fun ProSettingsSection(
     onStyleChange: (OverlayStyle) -> Unit,
     globalThresholds: Pair<Int, Int>,
     onGlobalThresholdsChange: (warnMin: Int, alertMin: Int) -> Unit,
+    dailySummaryEnabled: Boolean,
+    onDailySummaryToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -114,6 +116,8 @@ fun ProSettingsSection(
                     BlinkSection(style, onStyleChange)
                     HorizontalDivider(Modifier.padding(vertical = 12.dp))
                     RandomMoveSection(style, onStyleChange)
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                    DailySummarySection(dailySummaryEnabled, onDailySummaryToggle)
                 }
             }
         }
@@ -358,6 +362,21 @@ private fun RandomMoveSection(style: OverlayStyle, onStyleChange: (OverlayStyle)
                 )
             }
         }
+    }
+}
+
+// ── Daily summary ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun DailySummarySection(enabled: Boolean, onToggle: (Boolean) -> Unit) {
+    ToggleRow(label = "Daily Summary Notification", checked = enabled, onCheckedChange = onToggle)
+    AnimatedVisibility(visible = enabled) {
+        Text(
+            "Sends a notification with yesterday's usage totals at midnight.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
     }
 }
 

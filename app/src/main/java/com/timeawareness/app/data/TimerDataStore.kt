@@ -61,6 +61,7 @@ class TimerDataStore(private val context: Context) {
     private val globalWarnKey          = intPreferencesKey("global_warn_minutes")
     private val globalAlertKey         = intPreferencesKey("global_alert_minutes")
     private fun appThresholdKey(pkg: String) = stringPreferencesKey("threshold_$pkg")
+    private val dailySummaryEnabledKey = booleanPreferencesKey("daily_summary_enabled")
 
     private val overlayHueKey          = floatPreferencesKey("overlay_hue")
     private val overlaySaturationKey   = floatPreferencesKey("overlay_saturation")
@@ -263,6 +264,15 @@ class TimerDataStore(private val context: Context) {
 
     suspend fun clearAppThreshold(pkg: String) {
         context.dataStore.edit { prefs -> prefs.remove(appThresholdKey(pkg)) }
+    }
+
+    fun dailySummaryEnabledFlow(): Flow<Boolean> =
+        context.dataStore.data
+            .map { prefs -> prefs[dailySummaryEnabledKey] ?: false }
+            .distinctUntilChanged()
+
+    suspend fun setDailySummaryEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[dailySummaryEnabledKey] = enabled }
     }
 
     private fun parseThreshold(raw: String?): Pair<Int, Int>? {

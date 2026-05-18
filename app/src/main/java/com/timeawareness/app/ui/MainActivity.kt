@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
                 val overlaySize by viewModel.overlaySize.collectAsState()
                 val overlayStyle by viewModel.overlayStyle.collectAsState()
                 val globalThresholds by viewModel.globalThresholds.collectAsState()
+                val dailySummaryEnabled by viewModel.dailySummaryEnabled.collectAsState()
 
                 var hasUsageStats by remember {
                     mutableStateOf(UsageStatsHelper.hasUsageStatsPermission(this))
@@ -115,7 +116,9 @@ class MainActivity : ComponentActivity() {
                     onGlobalThresholdsChange = { w, a -> viewModel.setGlobalThresholds(w, a) },
                     onGetAppThresholds = { pkg -> viewModel.appThresholdsFor(pkg) },
                     onSaveAppThreshold = { pkg, w, a -> viewModel.setAppThreshold(pkg, w, a) },
-                    onClearAppThreshold = { pkg -> viewModel.clearAppThreshold(pkg) },
+                    onClearAppThreshold  = { pkg -> viewModel.clearAppThreshold(pkg) },
+                    dailySummaryEnabled  = dailySummaryEnabled,
+                    onDailySummaryToggle = { viewModel.setDailySummaryEnabled(it) },
                 )
             }
         }
