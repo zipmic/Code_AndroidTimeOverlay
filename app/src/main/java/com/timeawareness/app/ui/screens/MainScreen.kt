@@ -38,9 +38,12 @@ import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.model.AppTimerState
 import com.timeawareness.app.ui.components.AppTimerRow
+import com.timeawareness.app.ui.components.HistoryDialog
 import com.timeawareness.app.ui.components.PermissionBanner
 import com.timeawareness.app.ui.components.ProSettingsSection
 import com.timeawareness.app.util.FormatUtil
+import kotlinx.coroutines.flow.Flow
+import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,10 +63,12 @@ fun MainScreen(
     onRequestBatteryExemption: () -> Unit,
     onToggleMonitored: (String, Boolean) -> Unit,
     onResetTimer: (String) -> Unit,
+    onGetHistory: (String) -> Flow<Map<LocalDate, Long>>,
 ) {
     var query by remember { mutableStateOf("") }
     var resetTargetPkg by remember { mutableStateOf<String?>(null) }
     var resetTargetLabel by remember { mutableStateOf("") }
+    var historyTarget by remember { mutableStateOf<AppTimerState?>(null) }
 
     val monitoredApps = appStates.filter { it.isMonitored }
     val totalSeconds = monitoredApps.sumOf { it.elapsedSeconds }
@@ -224,7 +229,8 @@ fun MainScreen(
                                 onReset = {
                                     resetTargetPkg = state.packageName
                                     resetTargetLabel = state.appLabel
-                                }
+                                },
+                                onShowHistory = { historyTarget = state },
                             )
                         }
                     }
@@ -247,6 +253,14 @@ fun MainScreen(
             dismissButton = {
                 TextButton(onClick = { resetTargetPkg = null }) { Text("Cancel") }
             }
+        )
+    }
+
+    historyTarget?.let { state ->
+        HistoryDialog(
+            appLabel = state.appLabel,
+            historyFlow = onGetHistory(state.packageName),
+            onDismiss = { historyTarget = null },
         )
     }
 }

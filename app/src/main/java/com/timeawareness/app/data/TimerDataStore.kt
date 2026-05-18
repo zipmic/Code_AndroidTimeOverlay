@@ -196,4 +196,37 @@ class TimerDataStore(private val context: Context) {
         context.dataStore.data.first()[monitoredAppsKey] ?: emptySet()
 
     suspend fun readAllElapsedToday(): Map<String, Long> = snapshotFlow().first().elapsedToday
+
+    // ── Usage history ─────────────────────────────────────────────────────────
+
+    private fun historyKey(pkg: String) = stringPreferencesKey("history_$pkg")
+
+    private fun parseHistory(raw: String): Map<LocalDate, Long> {
+        if (raw.isBlank()) return emptyMap()
+        return raw.split("|").mapNotNull { entry ->
+            val parts = entry.split("=")
+            if (parts.size != 2) return@mapNotNull null
+            runCatching { LocalDate.parse(parts[0]) to parts[1].toLong() }.getOrNull()
+        }.toMap()
+    }
+
+    private fun serializeHistory(history: Map<LocalDate, Long>): String =
+        history.entries.joinToString("|") { "${it.key}=${it.value}" }
+
+    fun historyFlow(pkg: String): Flow<Map<LocalDate, Long>> =
+        context.dataStore.data
+            .map { prefs -> parseHistory(prefs[historyKey(pkg)] ?: "") }
+            .distinctUntilChanged()
+
+    suspend fun saveHistoryEntry(pkg: String, date: LocalDate, seconds: Long) {
+        context.dataStore.edit { prefs ->
+            val key = historyKey(pkg)
+            val updated = (parseHistory(prefs[key] ?: "") + (date to seconds))
+                .entries
+                .sortedByDescending { it.key }
+                .take(30)
+                .associate { it.key to it.value }
+            prefs[key] = serializeHistory(updated)
+        }
+    }
 }

@@ -307,12 +307,22 @@ class TrackingService : LifecycleService() {
         if (dirtyPackages.isEmpty()) return
         val snapshot = dirtyPackages.toList()
         dirtyPackages.clear()
-        snapshot.forEach { pkg -> dataStore.saveElapsedSeconds(pkg, elapsedSeconds[pkg] ?: 0L) }
+        val today = LocalDate.now()
+        snapshot.forEach { pkg ->
+            val seconds = elapsedSeconds[pkg] ?: 0L
+            dataStore.saveElapsedSeconds(pkg, seconds)
+            // Keep today's history entry current so the chart reflects live progress.
+            dataStore.saveHistoryEntry(pkg, today, seconds)
+        }
     }
 
-    private fun handleMidnightRollover() {
+    private suspend fun handleMidnightRollover() {
         val today = LocalDate.now()
         if (today != currentDate) {
+            // Persist yesterday's final totals before clearing the in-memory map.
+            elapsedSeconds.forEach { (pkg, seconds) ->
+                if (seconds > 0) dataStore.saveHistoryEntry(pkg, currentDate, seconds)
+            }
             currentDate = today
             elapsedSeconds.clear()
             dirtyPackages.clear()

@@ -108,7 +108,8 @@ class MainActivity : ComponentActivity() {
                         viewModel.setMonitored(pkg, enabled)
                         maybeStartService()
                     },
-                    onResetTimer = { pkg -> viewModel.resetTimer(pkg) }
+                    onResetTimer = { pkg -> viewModel.resetTimer(pkg) },
+                    onGetHistory = { pkg -> viewModel.historyFor(pkg) },
                 )
             }
         }

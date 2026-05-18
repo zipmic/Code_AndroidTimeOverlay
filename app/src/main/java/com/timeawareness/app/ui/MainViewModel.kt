@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
+import kotlinx.coroutines.flow.Flow
+import java.time.LocalDate
 import com.timeawareness.app.data.TimerDataStore.Companion.OVERLAY_SIZE_MAX
 import com.timeawareness.app.data.TimerDataStore.Companion.OVERLAY_SIZE_MIN
 import com.timeawareness.app.model.AppTimerState
@@ -83,6 +85,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setOverlayStyle(style: OverlayStyle) {
         viewModelScope.launch { dataStore.saveOverlayStyle(style) }
     }
+
+    fun historyFor(pkg: String): Flow<Map<LocalDate, Long>> = dataStore.historyFlow(pkg)
 
     fun refreshInstalledApps() {
         viewModelScope.launch {

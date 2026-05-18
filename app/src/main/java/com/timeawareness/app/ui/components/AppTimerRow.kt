@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -28,6 +29,7 @@ fun AppTimerRow(
     state: AppTimerState,
     onToggle: (Boolean) -> Unit,
     onReset: () -> Unit,
+    onShowHistory: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
@@ -53,6 +55,16 @@ fun AppTimerRow(
                         text = "Today: ${FormatUtil.formatSeconds(state.elapsedSeconds)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            if (state.isMonitored) {
+                IconButton(onClick = onShowHistory) {
+                    Icon(
+                        imageVector = Icons.Default.BarChart,
+                        contentDescription = "View history",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
