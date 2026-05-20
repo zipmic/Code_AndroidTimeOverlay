@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.timeawareness.app.data.ActiveSchedule
+import com.timeawareness.app.data.EarningsSettings
 import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.model.AppTimerState
@@ -49,6 +50,7 @@ import com.timeawareness.app.ui.components.PermissionBanner
 import com.timeawareness.app.ui.components.ProSettingsSection
 import com.timeawareness.app.ui.components.WeeklyReportDialog
 import com.timeawareness.app.util.FormatUtil
+import com.timeawareness.app.util.FormatUtil.formatCost
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -82,6 +84,8 @@ fun MainScreen(
     activeSchedule: ActiveSchedule,
     onActiveScheduleChange: (ActiveSchedule) -> Unit,
     onExportHistory: suspend () -> android.net.Uri?,
+    earningsSettings: EarningsSettings,
+    onEarningsSettingsChange: (EarningsSettings) -> Unit,
 ) {
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
@@ -200,8 +204,11 @@ fun MainScreen(
             // Daily total summary.
             if (monitoredApps.isNotEmpty()) {
                 item {
+                    val costSuffix = if (earningsSettings.enabled && earningsSettings.hourlyWage > 0f && totalSeconds > 0L) {
+                        " · ${formatCost(totalSeconds, earningsSettings.hourlyWage, earningsSettings.currencyCode)}"
+                    } else ""
                     Text(
-                        text = "Today: ${FormatUtil.formatHumanShort(totalSeconds)} across " +
+                        text = "Today: ${FormatUtil.formatHumanShort(totalSeconds)}$costSuffix across " +
                             "${monitoredApps.size} app${if (monitoredApps.size == 1) "" else "s"}",
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -250,6 +257,8 @@ fun MainScreen(
                     onDailySummaryToggle  = onDailySummaryToggle,
                     activeSchedule        = activeSchedule,
                     onActiveScheduleChange = onActiveScheduleChange,
+                    earningsSettings      = earningsSettings,
+                    onEarningsSettingsChange = onEarningsSettingsChange,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp),
@@ -343,6 +352,7 @@ fun MainScreen(
             appThresholdsFlow = onGetAppThresholds(state.packageName),
             onSaveThreshold = { w, a -> onSaveAppThreshold(state.packageName, w, a) },
             onClearThreshold = { onClearAppThreshold(state.packageName) },
+            earningsSettings = earningsSettings,
             onDismiss = { historyTarget = null },
         )
     }

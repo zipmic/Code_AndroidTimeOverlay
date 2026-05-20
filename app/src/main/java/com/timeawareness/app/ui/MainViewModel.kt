@@ -6,6 +6,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.timeawareness.app.data.ActiveSchedule
+import com.timeawareness.app.data.EarningsSettings
 import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
 import com.timeawareness.app.util.CsvExporter
@@ -132,6 +133,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setActiveSchedule(schedule: ActiveSchedule) {
         viewModelScope.launch { dataStore.saveActiveSchedule(schedule) }
+    }
+
+    val earningsSettings: StateFlow<EarningsSettings> = dataStore.earningsSettingsFlow()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, EarningsSettings())
+
+    fun setEarningsSettings(settings: EarningsSettings) {
+        viewModelScope.launch { dataStore.saveEarningsSettings(settings) }
     }
 
     suspend fun exportHistory(): Uri? = withContext(Dispatchers.IO) {

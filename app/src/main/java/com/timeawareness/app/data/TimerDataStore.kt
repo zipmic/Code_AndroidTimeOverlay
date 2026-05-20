@@ -43,6 +43,12 @@ data class ActiveSchedule(
     }
 }
 
+data class EarningsSettings(
+    val enabled: Boolean = false,
+    val hourlyWage: Float = 0f,
+    val currencyCode: String = "USD",
+)
+
 /**
  * All pro overlay settings in one place.
  * Defaults match the existing visual appearance so existing installs look unchanged.
@@ -81,6 +87,9 @@ class TimerDataStore(private val context: Context) {
     private val activeHoursStartKey     = intPreferencesKey("active_hours_start_hour")
     private val activeHoursEndKey       = intPreferencesKey("active_hours_end_hour")
     private val activeDaysKey           = intPreferencesKey("active_days_mask")
+    private val earningsEnabledKey      = booleanPreferencesKey("earnings_enabled")
+    private val earningsWageKey         = floatPreferencesKey("earnings_wage")
+    private val earningsCurrencyKey     = stringPreferencesKey("earnings_currency")
 
     private val overlayHueKey          = floatPreferencesKey("overlay_hue")
     private val overlaySaturationKey   = floatPreferencesKey("overlay_saturation")
@@ -370,6 +379,27 @@ class TimerDataStore(private val context: Context) {
         val today   = LocalDate.now().toString()
         val monitored = prefs[monitoredAppsKey] ?: emptySet()
         return monitored.associateWith { pkg -> parseSessionCount(prefs[sessionKey(pkg)], today) }
+    }
+
+    // ── Earnings ──────────────────────────────────────────────────────────────
+
+    fun earningsSettingsFlow(): Flow<EarningsSettings> =
+        context.dataStore.data
+            .map { prefs ->
+                EarningsSettings(
+                    enabled      = prefs[earningsEnabledKey]  ?: false,
+                    hourlyWage   = prefs[earningsWageKey]     ?: 0f,
+                    currencyCode = prefs[earningsCurrencyKey] ?: "USD",
+                )
+            }
+            .distinctUntilChanged()
+
+    suspend fun saveEarningsSettings(settings: EarningsSettings) {
+        context.dataStore.edit { prefs ->
+            prefs[earningsEnabledKey]  = settings.enabled
+            prefs[earningsWageKey]     = settings.hourlyWage
+            prefs[earningsCurrencyKey] = settings.currencyCode
+        }
     }
 
     suspend fun saveHistoryEntry(pkg: String, date: LocalDate, seconds: Long) {

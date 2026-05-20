@@ -41,7 +41,9 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.timeawareness.app.data.EarningsSettings
 import com.timeawareness.app.util.FormatUtil
+import com.timeawareness.app.util.FormatUtil.formatCost
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -55,6 +57,7 @@ fun HistoryDialog(
     appThresholdsFlow: Flow<Pair<Int, Int>?>,
     onSaveThreshold: (warnMin: Int, alertMin: Int) -> Unit,
     onClearThreshold: () -> Unit,
+    earningsSettings: EarningsSettings,
     onDismiss: () -> Unit,
 ) {
     val history by historyFlow.collectAsState(initial = emptyMap())
@@ -130,12 +133,20 @@ fun HistoryDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(
-                        text = "Total: ${FormatUtil.formatHumanShort(totalSeconds)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Total: ${FormatUtil.formatHumanShort(totalSeconds)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (earningsSettings.enabled && earningsSettings.hourlyWage > 0f && totalSeconds > 0L) {
+                            Text(
+                                text = "Cost: ${formatCost(totalSeconds, earningsSettings.hourlyWage, earningsSettings.currencyCode)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     TextButton(onClick = onDismiss) { Text("Close") }
                 }
             }

@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
                 val globalThresholds by viewModel.globalThresholds.collectAsState()
                 val dailySummaryEnabled by viewModel.dailySummaryEnabled.collectAsState()
                 val activeSchedule by viewModel.activeSchedule.collectAsState()
+                val earningsSettings by viewModel.earningsSettings.collectAsState()
 
                 var hasUsageStats by remember {
                     mutableStateOf(UsageStatsHelper.hasUsageStatsPermission(this))
@@ -123,6 +124,8 @@ class MainActivity : ComponentActivity() {
                     activeSchedule         = activeSchedule,
                     onActiveScheduleChange = { viewModel.setActiveSchedule(it) },
                     onExportHistory        = { viewModel.exportHistory() },
+                    earningsSettings       = earningsSettings,
+                    onEarningsSettingsChange = { viewModel.setEarningsSettings(it) },
                 )
             }
         }

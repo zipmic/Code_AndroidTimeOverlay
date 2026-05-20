@@ -12,15 +12,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -44,8 +49,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.timeawareness.app.data.ActiveSchedule
+import com.timeawareness.app.data.EarningsSettings
 import com.timeawareness.app.data.OverlayContent
 import com.timeawareness.app.data.OverlayStyle
 import com.timeawareness.app.data.TimerDataStore
@@ -53,6 +60,8 @@ import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_ALERT_MAX
 import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_MINUTES_MIN
 import com.timeawareness.app.data.TimerDataStore.Companion.THRESHOLD_WARN_MAX
 import com.timeawareness.app.util.ColorUtil
+import java.util.Currency
+import java.util.Locale
 
 @Composable
 fun ProSettingsSection(
@@ -64,6 +73,8 @@ fun ProSettingsSection(
     onDailySummaryToggle: (Boolean) -> Unit,
     activeSchedule: ActiveSchedule,
     onActiveScheduleChange: (ActiveSchedule) -> Unit,
+    earningsSettings: EarningsSettings,
+    onEarningsSettingsChange: (EarningsSettings) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -123,6 +134,8 @@ fun ProSettingsSection(
                     DailySummarySection(dailySummaryEnabled, onDailySummaryToggle)
                     HorizontalDivider(Modifier.padding(vertical = 12.dp))
                     ActiveScheduleSection(activeSchedule, onActiveScheduleChange)
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                    EarningsSection(earningsSettings, onEarningsSettingsChange)
                 }
             }
         }
@@ -464,6 +477,116 @@ private fun ActiveScheduleSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
+    }
+}
+
+// ── Earnings ──────────────────────────────────────────────────────────────────
+
+@Composable
+private fun EarningsSection(
+    settings: EarningsSettings,
+    onSettingsChange: (EarningsSettings) -> Unit,
+) {
+    ToggleRow(
+        label = "Earnings Tracking",
+        checked = settings.enabled,
+        onCheckedChange = { onSettingsChange(settings.copy(enabled = it)) },
+    )
+    AnimatedVisibility(visible = settings.enabled) {
+        Column {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "See how much your screen time costs in work hours.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+
+            var wageText by remember(settings.hourlyWage) {
+                mutableStateOf(if (settings.hourlyWage > 0f) settings.hourlyWage.toString() else "")
+            }
+            OutlinedTextField(
+                value = wageText,
+                onValueChange = { text ->
+                    wageText = text
+                    val parsed = text.toFloatOrNull() ?: 0f
+                    onSettingsChange(settings.copy(hourlyWage = parsed))
+                },
+                label = { Text("Hourly wage") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            CurrencyPicker(
+                selectedCode = settings.currencyCode,
+                onCurrencySelected = { onSettingsChange(settings.copy(currencyCode = it)) },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CurrencyPicker(
+    selectedCode: String,
+    onCurrencySelected: (String) -> Unit,
+) {
+    val allCurrencies = remember {
+        Currency.getAvailableCurrencies()
+            .sortedBy { it.currencyCode }
+            .map { it.currencyCode to it.getDisplayName(Locale.getDefault()) }
+    }
+
+    var expanded by remember { mutableStateOf(false) }
+    var filterText by remember { mutableStateOf("") }
+
+    val filtered = remember(filterText, allCurrencies) {
+        if (filterText.isBlank()) allCurrencies
+        else allCurrencies.filter { (code, name) ->
+            code.contains(filterText, ignoreCase = true) ||
+            name.contains(filterText, ignoreCase = true)
+        }
+    }
+
+    val selectedLabel = remember(selectedCode, allCurrencies) {
+        allCurrencies.firstOrNull { it.first == selectedCode }
+            ?.let { (code, name) -> "$code — $name" }
+            ?: selectedCode
+    }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        OutlinedTextField(
+            value = if (expanded) filterText else selectedLabel,
+            onValueChange = { filterText = it; expanded = true },
+            label = { Text("Currency") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(),
+        )
+        if (filtered.isNotEmpty()) {
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false; filterText = "" },
+                modifier = Modifier.heightIn(max = 240.dp),
+            ) {
+                filtered.take(80).forEach { (code, name) ->
+                    DropdownMenuItem(
+                        text = { Text("$code — $name", style = MaterialTheme.typography.bodyMedium) },
+                        onClick = {
+                            onCurrencySelected(code)
+                            filterText = ""
+                            expanded = false
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -1,8 +1,17 @@
 package com.timeawareness.app.util
 
+import java.util.Currency
 import java.util.Locale
 
 object FormatUtil {
+
+    fun formatCost(seconds: Long, wagePerHour: Float, currencyCode: String): String {
+        val symbol = runCatching {
+            Currency.getInstance(currencyCode).getSymbol(Locale.getDefault())
+        }.getOrDefault(currencyCode)
+        val cost = seconds / 3600.0 * wagePerHour
+        return "$symbol${String.format(Locale.ROOT, "%.2f", cost)}"
+    }
     fun formatSeconds(totalSeconds: Long): String {
         val h = totalSeconds / 3600
         val m = (totalSeconds % 3600) / 60
