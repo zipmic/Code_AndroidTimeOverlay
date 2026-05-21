@@ -56,8 +56,10 @@ class TrackingService : LifecycleService() {
         private const val SUMMARY_CHANNEL_ID  = "daily_summary"
         private const val NOTIFICATION_ID     = 1
         private const val SUMMARY_NOTIFICATION_ID = 2
-        private const val TICK_INTERVAL_MS = 2_000L
-        private const val PERSIST_INTERVAL_TICKS = 3   // every 6 s with 2 s tick
+        // Fast tick while a monitored app is in the foreground; slow poll otherwise.
+        private const val ACTIVE_TICK_MS     = 2_000L
+        private const val IDLE_TICK_MS       = 10_000L
+        private const val PERSIST_INTERVAL_TICKS = 3   // every 6 s with 2 s active tick
         private const val PERMISSION_RECHECK_MS = 30_000L
         private const val INITIAL_LOOKBACK_MS = 60 * 60 * 1000L  // 1 hour
 
@@ -296,7 +298,10 @@ class TrackingService : LifecycleService() {
         lastPollTime = System.currentTimeMillis() - INITIAL_LOOKBACK_MS
         tickJob = lifecycleScope.launch {
             while (true) {
-                delay(TICK_INTERVAL_MS)
+                // Sleep longer when nothing monitored is in the foreground — wakes up
+                // to check every 10 s and switches back to 2 s once one is active.
+                val monitoredIsActive = currentForegroundPkg?.let { it in monitoredApps } == true
+                delay(if (monitoredIsActive) ACTIVE_TICK_MS else IDLE_TICK_MS)
                 tick()
             }
         }
@@ -335,7 +340,7 @@ class TrackingService : LifecycleService() {
         val pkg = currentForegroundPkg ?: return
         if (pkg !in monitoredApps) return
 
-        val updated = (elapsedSeconds[pkg] ?: 0L) + TICK_INTERVAL_MS / 1000L
+        val updated = (elapsedSeconds[pkg] ?: 0L) + ACTIVE_TICK_MS / 1000L
         elapsedSeconds[pkg] = updated
         dirtyPackages += pkg
         // Stamp the authoritative value; display ticker interpolates from here.
