@@ -485,7 +485,6 @@ class TrackingService : LifecycleService() {
                 val style = cachedOverlayStyle
                 if (style.blinkEnabled && (now - lastBlinkMs) >= style.blinkIntervalSeconds * 1_000L) {
                     lastBlinkMs = now
-                    // Fire-and-forget: brief alpha flash, does not block the display tick.
                     launch {
                         overlayView?.alpha = 0f
                         delay(200L)
@@ -493,7 +492,22 @@ class TrackingService : LifecycleService() {
                     }
                 }
 
-                delay(1_000L)
+                // Sleep only as long as the content actually needs:
+                //   elapsed time → every 1 s (counting up visibly)
+                //   clock        → every 30 s (minute hand changes at most once per minute)
+                //   session/label → static; only wake for blink if enabled
+                val contentDelay = when (style.overlayContent) {
+                    OverlayContent.ELAPSED_TIME  -> 1_000L
+                    OverlayContent.CLOCK         -> 30_000L
+                    OverlayContent.SESSION_COUNT,
+                    OverlayContent.CUSTOM_LABEL  -> Long.MAX_VALUE / 2
+                }
+                val blinkDelay = if (style.blinkEnabled) {
+                    val sinceLastBlink = now - lastBlinkMs
+                    (style.blinkIntervalSeconds * 1_000L - sinceLastBlink).coerceAtLeast(500L)
+                } else Long.MAX_VALUE / 2
+
+                delay(minOf(contentDelay, blinkDelay))
             }
         }
     }
